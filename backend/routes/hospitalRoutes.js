@@ -1,0 +1,64 @@
+const express = require('express');
+const { Op } = require('sequelize');
+const Hospital = require('../models/Hospital');
+const { protect, authorize } = require('../middleware/auth');
+const logger = require('../config/logger');
+
+const router = express.Router();
+
+// List / search hospitals (search = autocomplete, no search = full list for management)
+router.get('/', protect, async (req, res) => {
+  try {
+    const { search, limit } = req.query;
+    const where = search ? { name: { [Op.iLike]: `%${search}%` } } : {};
+
+    const hospitals = await Hospital.findAll({
+      where,
+      order: [['name', 'ASC']],
+      limit: limit ? parseInt(limit) : 20
+    });
+
+    res.json(hospitals);
+  } catch (error) {
+    logger.error(`Get hospitals error: ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Add a new hospital (Supervisor/Admin only)
+router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => {
+  try {
+    const { name, province } = req.body;
+
+    if (!name || !province) {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อโรงพยาบาลและจังหวัด' });
+    }
+
+    const hospital = await Hospital.create({ name: name.trim(), province: province.trim() });
+    logger.info(`Hospital added: ${hospital.name} (${hospital.province})`);
+    res.status(201).json(hospital);
+  } catch (error) {
+    logger.error(`Create hospital error: ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete a hospital (Supervisor/Admin only)
+router.delete('/:id', protect, authorize('supervisor', 'admin'), async (req, res) => {
+  try {
+    const hospital = await Hospital.findByPk(req.params.id);
+
+    if (!hospital) {
+      return res.status(404).json({ message: 'ไม่พบโรงพยาบาลนี้' });
+    }
+
+    await hospital.destroy();
+    logger.info(`Hospital removed: ${hospital.name}`);
+    res.json({ success: true });
+  } catch (error) {
+    logger.error(`Delete hospital error: ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+module.exports = router;
