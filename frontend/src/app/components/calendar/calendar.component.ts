@@ -1,209 +1,410 @@
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { WorkOrderService, WorkOrder } from '../../services/work-order.service';
-import { AuthService } from '../../services/auth.service';
+import { AuthService, User } from '../../services/auth.service';
+import { UserService } from '../../services/user.service';
+import { I18nService } from '../../services/i18n.service';
+import { ScheduleSearchService } from '../../services/schedule-search.service';
+import { ToastrService } from 'ngx-toastr';
 import { Router } from '@angular/router';
-import * as moment from 'moment';
 
 @Component({
   selector: 'app-calendar',
   standalone: false,
   template: `
-    <div class="calendar-container">
-      <div class="header">
-        <div>
-          <h2>📅 ตารางงาน - {{ currentMonth | date:'MMMM yyyy' }}</h2>
-          <p *ngIf="auth.currentUser">ผู้ใช้งาน: {{ auth.currentUser.fullName }}</p>
+    <div class="cal-shell">
+      <div class="toolbar">
+        <div class="tabs">
+          <button [class.active]="view === 'month'" (click)="setView('month')">{{ i18n.t['viewMonth'] }}</button>
+          <button [class.active]="view === 'week'" (click)="setView('week')">{{ i18n.t['viewWeek'] }}</button>
+          <button [class.active]="view === 'day'" (click)="setView('day')">{{ i18n.t['viewDay'] }}</button>
         </div>
-        <div class="controls">
-          <select [(ngModel)]="selectedMonth" (change)="onMonthYearChange()" class="select-month">
-            <option *ngFor="let m of months" [value]="m.value">{{ m.label }}</option>
-          </select>
-          <select [(ngModel)]="selectedYear" (change)="onMonthYearChange()" class="select-year">
-            <option *ngFor="let y of years" [value]="y">{{ y }}</option>
-          </select>
-          <button (click)="changeMonth(-1)" class="btn-nav">◀ ก่อนหน้า</button>
-          <button (click)="changeMonth(0)" class="btn-nav">วันนี้</button>
-          <button (click)="changeMonth(1)" class="btn-nav">ถัดไป ▶</button>
-          <button *ngIf="auth.isSupervisor" (click)="toggleView()" class="btn-view">
-            {{ showAll ? '👤 งานของฉัน' : '👥 งานทั้งหมด' }}
-          </button>
-          <button (click)="addNewWork()" class="btn-add">➕ เพิ่มงาน</button>
-        </div>
-      </div>
 
-      <!-- Overdue Alert -->
-      <div *ngIf="overdueOrders.length > 0" class="alert-box alert-danger">
-        <h3>️ งานค้างเกินกำหนด ({{ overdueOrders.length }} รายการ)</h3>
-        <div *ngFor="let order of overdueOrders" class="overdue-item">
-          <strong>{{ order.srNumber }}</strong> - {{ order.customerName }}
-          <span class="days">ค้าง {{ order.overdueDays }} วัน</span>
-          <button (click)="viewOrder(order._id)" class="btn-small">ดูรายละเอียด</button>
-        </div>
-      </div>
+        <div class="period-nav">
+          <button (click)="prevPeriod()">‹</button>
+          <button type="button" class="period-label" (click)="toggleMonthPicker()">{{ periodLabel }}</button>
+          <button (click)="nextPeriod()">›</button>
 
-      <!-- Calendar Grid -->
-      <div class="calendar-grid">
-        <div class="day-header" *ngFor="let day of weekDays">{{ day }}</div>
-        <div *ngFor="let day of calendarDays" 
-             class="day-cell" 
-             [class.other-month]="!day.isCurrentMonth"
-             [class.today]="day.isToday"
-             (click)="onDayClick(day)">
-          <div class="date-number">{{ day.date | date:'d' }}</div>
-          <div *ngFor="let order of day.orders" 
-               class="work-item"
-               [class.planning]="order.status === 'approved' || order.status === 'pending_approval'"
-               [class.actual]="order.status === 'completed'"
-               [class.overdue]="order.isOverdue"
-               [class.cancelled]="order.status === 'cancelled'"
-               (click)="viewOrder(order._id); $event.stopPropagation()">
-            <div class="sr-num">{{ order.srNumber }}</div>
-            <div class="customer">{{ order.customerName }}</div>
-            <div class="type">{{ order.workType }}</div>
+          <div class="month-picker" *ngIf="showMonthPicker">
+            <div class="mp-head">
+              <button type="button" class="mp-nav" (click)="pickerYear = pickerYear - 1">‹</button>
+              <div class="mp-year mono">{{ pickerYearLabel }}</div>
+              <button type="button" class="mp-nav" (click)="pickerYear = pickerYear + 1">›</button>
+            </div>
+            <div class="mp-grid">
+              <button type="button" *ngFor="let m of monthNames; let i = index"
+                      class="mp-month"
+                      [class.selected]="isPickerMonthSelected(i)"
+                      (click)="pickMonth(i)">
+                {{ m }}
+              </button>
+            </div>
           </div>
         </div>
+        <button class="today-btn" (click)="goToday()">{{ i18n.t['today'] }}</button>
+
+        <div class="row-break"></div>
+
+        <div class="stats">
+          <span class="mono">{{ stats.total }} {{ i18n.t['jobsUnit'] }}</span>
+          <span class="mono tone-warn">{{ i18n.t['statQueued'] }} {{ stats.queued }}</span>
+        </div>
+
+        <div class="legend">
+          <span class="legend-item"><span class="dot" style="background:#d98b1e"></span>{{ i18n.statusLabel('pending_approval') }}</span>
+          <span class="legend-item"><span class="dot" style="background:#2563eb"></span>{{ i18n.statusLabel('approved') }}</span>
+          <span class="legend-item"><span class="dot" style="background:#8d949c"></span>{{ i18n.statusLabel('completed') }}</span>
+          <span class="legend-item"><span class="dot" style="background:#c2410c"></span>{{ i18n.statusLabel('overdue') }}</span>
+          <span class="legend-item"><span class="dot" style="background:#8d949c;opacity:.55"></span>{{ i18n.statusLabel('cancelled') }}</span>
+        </div>
+
+        <div class="row-break"></div>
+
+        <div class="spacer"></div>
+
+        <div class="scope-toggle" *ngIf="auth.isSupervisor">
+          <button [class.on]="!showAll" (click)="setScope(false)">{{ i18n.t['scopeMine'] }}</button>
+          <button [class.on]="showAll" (click)="setScope(true)">{{ i18n.t['scopeAll'] }}</button>
+        </div>
+        <div class="scope-note" *ngIf="!auth.isSupervisor">{{ i18n.t['scopeOwnOnly'] }}</div>
+
+        <button class="add-btn" (click)="addNewWork()">+ {{ i18n.t['navAdd'] }}</button>
       </div>
 
-      <!-- Legend -->
-      <div class="legend">
-        <span class="legend-item planning">📋 Planning</span>
-        <span class="legend-item actual">✅ Actual</span>
-        <span class="legend-item overdue">⚠️ Overdue</span>
-        <span class="legend-item cancelled">🚫 Cancelled</span>
+      <div *ngIf="auth.isSupervisor && overdueOrders.length > 0" class="overdue-alert">
+        <div class="overdue-title">⚠ {{ i18n.t['overdueAlert'] }} ({{ overdueOrders.length }})</div>
+        <div class="overdue-item" *ngFor="let o of overdueOrders">
+          <span class="mono">{{ o.srNumber }}</span>
+          <span class="overdue-customer">{{ o.customerName }}</span>
+          <span class="days">{{ o.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}</span>
+          <button (click)="viewOrder(o._id)">{{ i18n.t['viewDetail'] }}</button>
+        </div>
+      </div>
+
+      <div class="body">
+        <aside class="sidebar" *ngIf="auth.isSupervisor && showAll">
+          <div class="sidebar-head">
+            <span class="mono">{{ i18n.t['team'] }}</span>
+            <button class="link-btn" (click)="clearFilters()">{{ i18n.t['clearFilter'] }}</button>
+          </div>
+          <div class="tech-list">
+            <button *ngFor="let t of technicians" class="tech-row" [class.on]="filterTech === t._id" (click)="toggleTechFilter(t._id)">
+              <span class="tech-avatar" [style.background]="filterTech === t._id ? null : avatarColor(t.fullName)">{{ initials(t.fullName) }}</span>
+              <span class="tech-meta">
+                <span class="tech-name">{{ t.fullName }}</span>
+                <span class="tech-role">{{ i18n.roleLabel(t.role) }}</span>
+              </span>
+              <span class="tech-hours mono" [title]="i18n.t['techLoad']">{{ techHours(t._id) ? techHours(t._id) + ' ' + i18n.t['hoursUnit'] : '-' }}</span>
+            </button>
+            <div *ngIf="technicians.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
+          </div>
+
+          <div class="queue-head">
+            <span class="mono">{{ i18n.t['queueTitle'] }}</span>
+            <span class="queue-count mono">{{ pendingApproval.length }}</span>
+          </div>
+          <div class="queue-list">
+            <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
+              <div class="queue-row">
+                <span class="mono">{{ o.srNumber }}</span>
+                <span class="mono">{{ o.plannedDate | date:'d MMM' }}</span>
+              </div>
+              <div class="queue-customer">{{ o.customerName }}</div>
+              <div class="queue-sub">{{ i18n.typeLabel(o.workType) }} · {{ o.technician?.fullName }}</div>
+              <div class="queue-window mono">{{ timeWindow(o) }}</div>
+            </div>
+            <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
+          </div>
+        </aside>
+
+        <main class="main-view">
+          <!-- Month view -->
+          <div *ngIf="view === 'month'" class="month-grid">
+            <div class="dow-cell mono" *ngFor="let d of dowShortLabels">{{ d }}</div>
+            <div class="day-cell" *ngFor="let day of calendarDays"
+                 [class.other-month]="!day.isCurrentMonth" [class.today]="day.isToday"
+                 (click)="onDayClick(day)">
+              <div class="day-num mono">{{ day.date.getDate() }}</div>
+              <div class="job-chip" *ngFor="let order of day.orders" [ngClass]="statusClass(order.status)"
+                   (click)="viewOrder(order._id); $event.stopPropagation()">
+                <div class="chip-sr mono">{{ order.srNumber }}</div>
+                <div class="chip-title">{{ order.customerName }}</div>
+                <div class="chip-sub">{{ i18n.typeLabel(order.workType) }}<span *ngIf="showAll"> · {{ order.technician?.fullName }}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Week view -->
+          <div *ngIf="view === 'week'" class="week-view">
+            <div class="week-col" *ngFor="let day of weekColumns">
+              <div class="week-col-head" [class.today]="day.isToday">
+                <div><span class="dow">{{ day.dowLabel }}</span> <span class="mono num">{{ day.date.getDate() }}</span></div>
+                <div class="week-col-count mono">{{ day.orders.length }} {{ i18n.t['jobsUnit'] }}</div>
+              </div>
+              <div class="week-col-body">
+                <div class="job-card" *ngFor="let order of day.orders" [ngClass]="statusClass(order.status)" (click)="viewOrder(order._id)">
+                  <div class="card-top mono"><span>{{ timeWindow(order) }}</span><span>{{ i18n.statusLabel(order.status) }}</span></div>
+                  <div class="card-title">{{ order.customerName }}</div>
+                  <div class="card-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.srNumber }}</div>
+                  <div class="card-tech" *ngIf="showAll">{{ order.technician?.fullName }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Day view -->
+          <div *ngIf="view === 'day'" class="day-view">
+            <div class="day-scale-wrap">
+              <div class="day-head-row">
+                <div class="tech-col-head mono">{{ i18n.t['owner'] }}</div>
+                <div class="hours-head">
+                  <div class="hour-cell mono" *ngFor="let h of hours">{{ h }}:00</div>
+                </div>
+              </div>
+              <div class="day-row" *ngFor="let row of dayRows">
+                <div class="tech-col">
+                  <span class="tech-avatar" [style.background]="avatarColor(row.name)">{{ initials(row.name) }}</span>
+                  <span class="tech-meta">
+                    <span class="tech-name">{{ row.name }}</span>
+                    <span class="tech-role mono" *ngIf="row.hoursLabel">{{ row.hoursLabel }}</span>
+                  </span>
+                </div>
+                <div class="hours-track">
+                  <div class="hour-line" *ngFor="let h of hours"></div>
+                  <div class="job-block" *ngFor="let order of row.orders" [ngClass]="statusClass(order.status)"
+                       [style.left]="blockLeft(order)" [style.width]="blockWidth(order)"
+                       (click)="viewOrder(order._id)">
+                    <div class="block-title">{{ order.customerName }} · {{ i18n.typeLabel(order.workType) }}</div>
+                    <div class="block-sub mono">{{ timeWindow(order) }} · {{ order.srNumber }}</div>
+                  </div>
+                </div>
+              </div>
+              <div *ngIf="dayRows.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   `,
   styles: [`
-    .calendar-container { padding: 20px; max-width: 1400px; margin: 0 auto; }
-    .header { 
-      display: flex; justify-content: space-between; align-items: center; 
-      margin-bottom: 20px; flex-wrap: wrap; gap: 15px;
+    .cal-shell { display: flex; flex-direction: column; height: calc(100vh - 62px); min-height: 0; }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 12px; padding: 9px 16px;
+      border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; background: var(--surface);
     }
-    .header h2 { margin: 0 0 5px 0; color: #1976d2; }
-    .header p { margin: 0; color: #666; font-size: 14px; }
-    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .select-month, .select-year {
-      padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;
-      font-size: 14px; background: white; cursor: pointer;
+    .tabs, .period-nav, .scope-toggle { border-radius: var(--radius); display: flex; border: 1px solid var(--line); overflow: hidden; }
+    .tabs button, .scope-toggle button {
+      height: 36px; padding: 0 15px; border: none; border-right: 1px solid var(--line);
+      background: var(--surface); color: var(--sub); font-size: 13px; font-weight: 600; cursor: pointer;
     }
-    .btn-nav, .btn-view, .btn-add {
-      padding: 8px 16px; border: none; border-radius: 4px;
-      cursor: pointer; font-weight: bold; transition: all 0.2s;
+    .tabs button:last-child, .scope-toggle button:last-child { border-right: none; }
+    .tabs button.active, .scope-toggle button.on { background: #14161a; color: #fff; }
+    .scope-toggle button.on { background: var(--accent); }
+    .tabs button:hover, .scope-toggle button:hover { filter: brightness(1.05); }
+
+    .period-nav { position: relative; overflow: visible; }
+    .period-nav button { width: 34px; height: 36px; border: none; background: var(--surface); color: var(--sub); font-size: 15px; cursor: pointer; }
+    .period-nav button:hover { color: var(--accent); }
+    .period-nav .period-label { display: flex; align-items: center; padding: 0 14px; min-width: 176px; font-size: 13px; font-weight: 600; border-left: 1px solid var(--line); border-right: 1px solid var(--line); justify-content: center; font-family: inherit; color: var(--ink); }
+    .period-nav .period-label:hover { color: var(--accent); background: var(--alt); }
+
+    .month-picker {
+      position: absolute; top: calc(100% + 6px); left: 50%; margin-left: -120px; z-index: 30;
+      width: 240px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px; box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26); animation: modalIn .16s ease both;
     }
-    .btn-nav { background: #f5f5f5; color: #333; }
-    .btn-nav:hover { background: #e0e0e0; }
-    .btn-view { background: #2196f3; color: white; }
-    .btn-add { background: #4caf50; color: white; }
-    
-    .alert-box { 
-      background: #ffebee; border-left: 4px solid #f44336; 
-      padding: 15px; margin-bottom: 20px; border-radius: 4px;
+    .mp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .mp-nav { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--sub); font-size: 14px; }
+    .mp-nav:hover { border-color: var(--accent); color: var(--accent); }
+    .mp-year { font-size: 13px; font-weight: 700; color: var(--ink); }
+    .mp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+    .mp-month { height: 36px; border-radius: 8px; border: 1px solid transparent; background: var(--alt); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .mp-month:hover { border-color: var(--accent); }
+    .mp-month.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .today-btn {
+      height: 36px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--line);
+      background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
-    .alert-box h3 { margin: 0 0 10px 0; color: #c62828; }
-    .overdue-item { 
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px; margin: 5px 0; background: white; border-radius: 4px;
+    .today-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .stats { display: flex; align-items: center; gap: 13px; font-size: 13px; flex-wrap: wrap; }
+    .tone-info { color: var(--info-text); }
+    .tone-warn { color: var(--warn-text); }
+    .tone-danger { color: var(--danger-text); }
+
+    .legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--sub); }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+    .spacer { flex: 1; min-width: 8px; }
+    .scope-note { font-size: 12px; color: var(--sub); }
+    .add-btn {
+      border-radius: var(--radius); height: 36px; padding: 0 16px; border: 1px solid var(--accent);
+      background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
     }
-    .days { color: #f44336; font-weight: bold; margin: 0 10px; }
-    .btn-small { 
-      padding: 4px 12px; border: none; border-radius: 4px; 
-      background: #f44336; color: white; cursor: pointer; font-size: 12px;
+    .add-btn:hover { background: var(--accent-hover); }
+
+    .overdue-alert { background: var(--danger-bg); border-bottom: 1px solid var(--danger-line); padding: 10px 16px; flex: none; }
+    .overdue-title { font-size: 13px; font-weight: 700; color: var(--danger-text); margin-bottom: 6px; }
+    .overdue-item { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 4px 0; flex-wrap: wrap; }
+    .overdue-customer { flex: 1; min-width: 120px; }
+    .days { color: var(--danger-text); font-weight: 700; }
+    .overdue-item button {
+      border-radius: 8px; height: 26px; padding: 0 10px; border: 1px solid var(--danger-line);
+      background: var(--surface); color: var(--danger-text); font-size: 11.5px; cursor: pointer;
     }
-    
-    .calendar-grid { 
-      display: grid; 
-      grid-template-columns: repeat(7, 1fr); 
-      gap: 2px; 
-      background: #e0e0e0;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px; overflow: hidden;
+
+    .body { display: flex; flex: 1; min-height: 0; }
+
+    .sidebar { width: 280px; flex: none; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; flex: none; font-size: 10px; letter-spacing: 0.1em; color: var(--sub); }
+    .link-btn { border: none; background: transparent; font-size: 12px; color: var(--accent); cursor: pointer; padding: 0; }
+    .tech-list { flex: 1 1 0; min-height: 0; max-height: 34vh; overflow-y: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+    .tech-row {
+      border-radius: var(--radius); display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      padding: 7px 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer;
     }
-    .day-header { 
-      background: #1976d2; color: white; padding: 12px; 
-      text-align: center; font-weight: bold;
-    }
-    .day-cell { 
-      background: white; min-height: 120px; padding: 5px; 
-      position: relative; cursor: pointer;
-    }
-    .day-cell:hover { background: #f5f5f5; }
-    .day-cell.other-month { background: #fafafa; color: #999; }
-    .day-cell.today { background: #fff9c4; }
-    .date-number { font-weight: bold; margin-bottom: 5px; font-size: 14px; }
-    
-    .work-item { 
-      padding: 4px; margin: 2px 0; border-radius: 3px; 
-      cursor: pointer; font-size: 11px; transition: all 0.2s;
-    }
-    .work-item:hover { transform: scale(1.02); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-    .work-item.planning { background: #e3f2fd; border-left: 3px solid #2196f3; }
-    .work-item.actual { background: #e8f5e9; border-left: 3px solid #4caf50; }
-    .work-item.overdue { background: #ffebee; border-left: 3px solid #f44336; }
-    .work-item.cancelled { background: #f5f5f5; border-left: 3px solid #9e9e9e; text-decoration: line-through; }
-    
-    .sr-num { font-weight: bold; font-size: 10px; }
-    .customer { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .type { font-size: 9px; color: #666; }
-    
-    .legend { margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
-    .legend-item { padding: 5px 12px; border-radius: 3px; font-size: 13px; }
-    .legend-item.planning { background: #e3f2fd; }
-    .legend-item.actual { background: #e8f5e9; }
-    .legend-item.overdue { background: #ffebee; }
-    .legend-item.cancelled { background: #f5f5f5; }
-    
-    @media (max-width: 768px) {
-      .day-cell { min-height: 80px; }
-      .work-item { font-size: 9px; }
-      .sr-num, .customer { font-size: 8px; }
-      .header { flex-direction: column; align-items: flex-start; }
-      .controls { width: 100%; }
-      .controls button { flex: 1; }
+    .tech-row.on { border-color: var(--accent); background: var(--info-bg); }
+    .tech-row:hover { border-color: var(--accent); }
+    .tech-avatar { border-radius: 8px; width: 28px; height: 28px; flex: none; background: var(--avatar); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+    .tech-row.on .tech-avatar { background: var(--accent); }
+    .tech-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .tech-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+    .tech-role { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tech-hours { font-size: 11px; color: var(--sub); }
+
+    .queue-head { padding: 13px 16px 12px; border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line2); display: flex; align-items: center; gap: 9px; flex: none; font-size: 10px; letter-spacing: 0.1em; color: var(--sub); }
+    .queue-count { border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); padding: 1px 8px; }
+    .queue-list { flex: 1.6 1 0; min-height: 0; overflow-y: auto; padding: 12px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .queue-item { border-radius: var(--radius); border: 1px solid var(--line); border-left: 4px solid #d98b1e; background: var(--surface); padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+    .queue-item:hover { border-color: var(--accent); }
+    .queue-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--sub); }
+    .queue-customer { font-size: 14px; font-weight: 600; }
+    .queue-sub { font-size: 12px; color: var(--sub); }
+    .queue-window { font-size: 11px; color: var(--sub); }
+    .empty-note { font-size: 12.5px; color: var(--sub); padding: 10px 4px; }
+
+    .main-view { flex: 1; min-width: 0; overflow: auto; background: var(--surface); }
+
+    .month-grid { display: grid; grid-template-columns: repeat(7, minmax(132px, 1fr)); min-width: 980px; }
+    .dow-cell { padding: 10px 12px 9px; background: var(--alt); color: var(--sub); border-right: 1px solid var(--line2); border-bottom: 2px solid var(--accent); text-align: center; font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; position: sticky; top: 0; z-index: 2; }
+    .day-cell { min-height: 126px; border-right: 1px solid var(--line2); border-bottom: 1px solid var(--line2); background: var(--surface); padding: 7px 8px 10px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
+    .day-cell:hover { background: var(--alt); }
+    .day-cell.other-month { background: var(--out-bg); color: var(--out-ink); }
+    .day-cell.today { background: var(--today-bg); }
+    .day-num { font-size: 13px; font-weight: 600; }
+    .job-chip { border-radius: var(--radius); border: 1px solid var(--line); border-left: 4px solid var(--sub); background: var(--alt); padding: 6px 7px; cursor: pointer; }
+    .job-chip:hover { filter: brightness(1.06); }
+    .chip-sr { font-size: 10.5px; color: var(--sub); }
+    .chip-title { font-size: 12px; font-weight: 600; line-height: 1.3; margin-top: 2px; }
+    .chip-sub { font-size: 11px; color: var(--sub); margin-top: 2px; }
+
+    .week-view { display: flex; align-items: stretch; min-width: 1040px; height: 100%; }
+    .week-col { flex: 1; min-width: 148px; border-right: 1px solid var(--line2); display: flex; flex-direction: column; }
+    .week-col-head { padding: 9px 12px; background: var(--alt); border-bottom: 1px solid var(--line); }
+    .week-col-head.today { background: var(--today-bg); }
+    .week-col-head .dow { font-size: 13px; font-weight: 700; }
+    .week-col-head .num { font-size: 15px; font-weight: 600; margin-left: 6px; }
+    .week-col-count { font-size: 11px; color: var(--sub); margin-top: 2px; }
+    .week-col-body { flex: 1; padding: 9px 9px 16px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+    .job-card { border-radius: var(--radius); border: 1px solid var(--line); border-left: 4px solid var(--sub); background: var(--alt); padding: 8px 9px; cursor: pointer; }
+    .job-card:hover { filter: brightness(1.06); }
+    .card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--sub); }
+    .card-title { font-size: 12.5px; font-weight: 600; line-height: 1.35; margin-top: 4px; }
+    .card-sub { font-size: 11.5px; color: var(--sub); margin-top: 3px; }
+    .card-tech { font-size: 11.5px; margin-top: 6px; }
+
+    .day-view { min-width: 100%; }
+    .day-scale-wrap { min-width: 2080px; }
+    .day-head-row { display: flex; position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .tech-col-head { width: 226px; flex: none; padding: 9px 14px; font-size: 10px; letter-spacing: 0.12em; color: var(--sub); }
+    .hours-head { flex: 1; display: flex; }
+    .hour-cell { flex: 1; border-right: 1px solid var(--line2); padding: 9px 0 7px 7px; font-size: 11px; color: var(--sub); }
+    .day-row { display: flex; border-bottom: 1px solid var(--line2); }
+    .tech-col { width: 226px; flex: none; border-right: 1px solid var(--line); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    .hours-track { flex: 1; position: relative; height: 62px; }
+    .hour-line { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--line2); }
+    .day-row .hours-track { display: flex; }
+    .job-block { border-radius: var(--radius); position: absolute; top: 8px; bottom: 8px; background: var(--alt); border: 1px solid var(--line); border-left: 4px solid var(--sub); padding: 5px 8px; overflow: hidden; cursor: pointer; }
+    .job-block:hover { filter: brightness(1.06); }
+    .block-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .block-sub { font-size: 11px; color: var(--sub); }
+
+    .st-warn { border-left-color: #d98b1e !important; background: var(--warn-bg) !important; }
+    .st-info { border-left-color: var(--accent) !important; background: var(--info-bg) !important; }
+    .st-success { border-left-color: #0d8f72 !important; background: var(--success-bg) !important; }
+    .st-neutral { border-left-color: #8d949c !important; background: var(--alt) !important; }
+    .st-danger { border-left-color: #c2410c !important; background: var(--danger-bg) !important; }
+    .st-muted { border-left-color: #8d949c !important; background: var(--alt) !important; opacity: 0.65; text-decoration: line-through; }
+
+    @media (max-width: 1024px) {
+      .sidebar { display: none; }
+      .toolbar { padding: 10px 12px; justify-content: center; }
+      .stats, .legend { display: contents; }
+      .row-break { flex-basis: 100%; height: 0; }
+      .spacer { display: none; }
+      .add-btn { margin-left: auto; }
     }
   `]
 })
 export class CalendarComponent implements OnInit {
+  view: 'month' | 'week' | 'day' = 'month';
   currentMonth: Date = new Date();
-  selectedMonth: number = this.currentMonth.getMonth() + 1;
-  selectedYear: number = this.currentMonth.getFullYear();
-  weekDays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-  calendarDays: any[] = [];
+  selectedDate: Date = new Date();
   workOrders: WorkOrder[] = [];
   overdueOrders: WorkOrder[] = [];
+  technicians: User[] = [];
   showAll = false;
+  filterTech: string | null = null;
+  hours = Array.from({ length: 24 }, (_, i) => i);
+  showMonthPicker = false;
+  pickerYear = new Date().getFullYear();
   private ordersSub?: Subscription;
-
-  months = [
-    { value: 1, label: 'มกราคม' }, { value: 2, label: 'กุมภาพันธ์' },
-    { value: 3, label: 'มีนาคม' }, { value: 4, label: 'เมษายน' },
-    { value: 5, label: 'พฤษภาคม' }, { value: 6, label: 'มิถุนายน' },
-    { value: 7, label: 'กรกฎาคม' }, { value: 8, label: 'สิงหาคม' },
-    { value: 9, label: 'กันยายน' }, { value: 10, label: 'ตุลาคม' },
-    { value: 11, label: 'พฤศจิกายน' }, { value: 12, label: 'ธันวาคม' }
-  ];
-  years = Array.from({ length: 41 }, (_, i) => new Date().getFullYear() - 20 + i);
 
   constructor(
     private workOrderService: WorkOrderService,
+    private userService: UserService,
     public auth: AuthService,
+    public i18n: I18nService,
+    private scheduleSearch: ScheduleSearchService,
+    private toastr: ToastrService,
     private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
 
-  ngOnInit() {
-    this.loadCalendar();
+  get query(): string {
+    return this.scheduleSearch.query;
+  }
+  set query(value: string) {
+    this.scheduleSearch.query = value;
   }
 
-  onMonthYearChange() {
-    this.currentMonth = new Date(this.selectedYear, this.selectedMonth - 1, 1);
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent) {
+    if (this.showMonthPicker && !(event.target as HTMLElement).closest('.period-nav')) {
+      this.showMonthPicker = false;
+    }
+  }
+
+  ngOnInit() {
     this.loadCalendar();
+    if (this.auth.isSupervisor) {
+      this.userService.getTeamMembers().subscribe({
+        next: (list) => { this.technicians = list; this.cdr.detectChanges(); },
+        error: (err) => console.error('Error loading team members:', err)
+      });
+    }
+  }
+
+  get dowShortLabels(): string[] {
+    return this.i18n.lang === 'th' ? ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   }
 
   loadCalendar() {
     const month = this.currentMonth.getMonth() + 1;
     const year = this.currentMonth.getFullYear();
-    
+
     const obs = this.showAll && this.auth.isSupervisor
       ? this.workOrderService.getAllOrders(month, year)
       : this.workOrderService.getMyOrders(month, year);
@@ -212,7 +413,6 @@ export class CalendarComponent implements OnInit {
     this.ordersSub = obs.subscribe({
       next: (orders) => {
         this.workOrders = orders;
-        this.buildCalendarDays();
         this.cdr.detectChanges();
       },
       error: (err) => console.error('Error loading orders:', err)
@@ -229,62 +429,135 @@ export class CalendarComponent implements OnInit {
     }
   }
 
-  buildCalendarDays() {
-    this.calendarDays = [];
-    const year = this.currentMonth.getFullYear();
-    const month = this.currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const startOffset = firstDay.getDay();
+  // --- filters -------------------------------------------------------
+
+  get visibleOrders(): WorkOrder[] {
+    let list = this.workOrders;
+    if (this.filterTech) list = list.filter(o => this.techIdOf(o) === this.filterTech);
+    const q = this.query.trim().toLowerCase();
+    if (q) {
+      list = list.filter(o =>
+        (o.srNumber + o.customerName + o.workType + (o.technician?.fullName || '')).toLowerCase().includes(q));
+    }
+    return list;
+  }
+
+  get pendingApproval(): WorkOrder[] {
+    return this.workOrders
+      .filter(o => o.status === 'pending_approval')
+      .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime());
+  }
+
+  get stats() {
+    const list = this.visibleOrders;
+    return {
+      total: list.length,
+      queued: list.filter(o => o.status === 'pending_approval').length
+    };
+  }
+
+  techHours(techId: string): number {
+    return this.workOrders
+      .filter(o => this.techIdOf(o) === techId)
+      .reduce((a, o) => a + this.durationOf(o), 0);
+  }
+
+  toggleTechFilter(techId: string) {
+    this.filterTech = this.filterTech === techId ? null : techId;
+  }
+
+  clearFilters() {
+    this.filterTech = null;
+    this.query = '';
+    this.toastr.info(this.i18n.t['toastFilterCleared']);
+  }
+
+  setScope(all: boolean) {
+    this.showAll = all;
+    this.filterTech = null;
+    this.loadCalendar();
+  }
+
+  setView(v: 'month' | 'week' | 'day') {
+    this.view = v;
+  }
+
+  // --- navigation ------------------------------------------------------
+
+  get periodLabel(): string {
+    const locale = this.i18n.lang === 'th' ? 'th-TH' : 'en-US';
+    if (this.view === 'week') {
+      const start = this.weekStart;
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      const monthLabel = start.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+      return `${start.getDate()}–${end.getDate()} ${monthLabel}`;
+    }
+    if (this.view === 'day') {
+      return this.selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    return this.currentMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  }
+
+  prevPeriod() {
+    if (this.view === 'month') return this.changeMonth(-1);
+    this.shiftSelected(this.view === 'week' ? -7 : -1);
+  }
+  nextPeriod() {
+    if (this.view === 'month') return this.changeMonth(1);
+    this.shiftSelected(this.view === 'week' ? 7 : 1);
+  }
+  goToday() {
     const today = new Date();
+    this.selectedDate = today;
+    this.setCurrentMonth(today);
+  }
 
-    // Previous month days
-    const prevMonthLast = new Date(year, month, 0);
-    for (let i = startOffset - 1; i >= 0; i--) {
-      const d = new Date(year, month - 1, prevMonthLast.getDate() - i);
-      this.calendarDays.push({
-        date: d,
-        isCurrentMonth: false,
-        isToday: false,
-        orders: this.getOrdersForDate(d)
-      });
-    }
-
-    // Current month days
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      const d = new Date(year, month, i);
-      this.calendarDays.push({
-        date: d,
-        isCurrentMonth: true,
-        isToday: this.isSameDay(d, today),
-        orders: this.getOrdersForDate(d)
-      });
-    }
-
-    // Next month days
-    const remaining = 42 - this.calendarDays.length;
-    for (let i = 1; i <= remaining; i++) {
-      const d = new Date(year, month + 1, i);
-      this.calendarDays.push({
-        date: d,
-        isCurrentMonth: false,
-        isToday: false,
-        orders: this.getOrdersForDate(d)
-      });
+  private shiftSelected(days: number) {
+    const d = new Date(this.selectedDate);
+    d.setDate(d.getDate() + days);
+    this.selectedDate = d;
+    if (d.getMonth() !== this.currentMonth.getMonth() || d.getFullYear() !== this.currentMonth.getFullYear()) {
+      this.setCurrentMonth(d);
     }
   }
 
-  getOrdersForDate(date: Date): WorkOrder[] {
-    return this.workOrders.filter(order => {
-      const planned = new Date(order.plannedDate);
-      return this.isSameDay(planned, date);
-    });
+  private setCurrentMonth(d: Date) {
+    this.currentMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+    this.loadCalendar();
   }
 
-  isSameDay(d1: Date, d2: Date): boolean {
-    return d1.getFullYear() === d2.getFullYear() &&
-           d1.getMonth() === d2.getMonth() &&
-           d1.getDate() === d2.getDate();
+  get monthNames(): string[] {
+    const locale = this.i18n.lang === 'th' ? 'th-TH' : 'en-US';
+    return Array.from({ length: 12 }, (_, i) => new Date(2024, i, 1).toLocaleDateString(locale, { month: 'short' }));
+  }
+
+  get pickerYearLabel(): string {
+    const locale = this.i18n.lang === 'th' ? 'th-TH' : 'en-US';
+    return new Date(this.pickerYear, 0, 1).toLocaleDateString(locale, { year: 'numeric' });
+  }
+
+  private get pickerBaseDate(): Date {
+    return this.view === 'month' ? this.currentMonth : this.selectedDate;
+  }
+
+  toggleMonthPicker() {
+    this.showMonthPicker = !this.showMonthPicker;
+    if (this.showMonthPicker) {
+      this.pickerYear = this.pickerBaseDate.getFullYear();
+    }
+  }
+
+  isPickerMonthSelected(monthIndex: number): boolean {
+    return this.pickerYear === this.pickerBaseDate.getFullYear() && monthIndex === this.pickerBaseDate.getMonth();
+  }
+
+  pickMonth(monthIndex: number) {
+    const daysInMonth = new Date(this.pickerYear, monthIndex + 1, 0).getDate();
+    const day = Math.min(this.selectedDate.getDate(), daysInMonth);
+    this.selectedDate = new Date(this.pickerYear, monthIndex, day);
+    this.setCurrentMonth(this.selectedDate);
+    this.showMonthPicker = false;
   }
 
   changeMonth(delta: number) {
@@ -293,22 +566,182 @@ export class CalendarComponent implements OnInit {
     } else {
       this.currentMonth = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth() + delta, 1);
     }
-    this.selectedMonth = this.currentMonth.getMonth() + 1;
-    this.selectedYear = this.currentMonth.getFullYear();
-    this.loadCalendar();
-  }
-
-  toggleView() {
-    this.showAll = !this.showAll;
-    this.loadCalendar();
-  }
-
-  onDayClick(day: any) {
-    // Optional: Add new work order for this day
-    if (day.isCurrentMonth) {
-      // Could open a dialog to add new work
-      console.log('Clicked on:', day.date);
+    if (this.selectedDate.getMonth() !== this.currentMonth.getMonth() || this.selectedDate.getFullYear() !== this.currentMonth.getFullYear()) {
+      this.selectedDate = new Date(this.currentMonth);
     }
+    this.loadCalendar();
+  }
+
+  onDayClick(day: { date: Date; isCurrentMonth: boolean }) {
+    this.selectedDate = day.date;
+    if (!day.isCurrentMonth) {
+      this.setCurrentMonth(day.date);
+    }
+    this.view = 'day';
+  }
+
+  // --- month view --------------------------------------------------------
+
+  get calendarDays() {
+    const year = this.currentMonth.getFullYear();
+    const month = this.currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startOffset = firstDay.getDay();
+    const today = new Date();
+    const days: { date: Date; isCurrentMonth: boolean; isToday: boolean; orders: WorkOrder[] }[] = [];
+
+    const prevMonthLast = new Date(year, month, 0);
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, prevMonthLast.getDate() - i);
+      days.push({ date: d, isCurrentMonth: false, isToday: false, orders: this.ordersOn(d) });
+    }
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      const d = new Date(year, month, i);
+      days.push({ date: d, isCurrentMonth: true, isToday: this.isSameDay(d, today), orders: this.ordersOn(d) });
+    }
+    const remaining = 42 - days.length;
+    for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
+      days.push({ date: d, isCurrentMonth: false, isToday: false, orders: this.ordersOn(d) });
+    }
+    return days;
+  }
+
+  // --- week view -----------------------------------------------------
+
+  get weekStart(): Date {
+    const d = new Date(this.selectedDate);
+    d.setDate(d.getDate() - d.getDay());
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  get weekColumns() {
+    const start = this.weekStart;
+    const today = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return { date: d, dowLabel: this.dowShortLabels[d.getDay()], isToday: this.isSameDay(d, today), orders: this.ordersOn(d) };
+    });
+  }
+
+  // --- day view --------------------------------------------------------
+
+  get dayRows() {
+    const ordersOnDate = this.ordersOn(this.selectedDate);
+    if (this.auth.isSupervisor && this.showAll) {
+      const source = this.filterTech ? this.technicians.filter(t => t._id === this.filterTech) : this.technicians;
+      const rows = source.map(t => {
+        const orders = ordersOnDate.filter(o => this.techIdOf(o) === t._id);
+        const hrs = orders.reduce((a, o) => a + this.durationOf(o), 0);
+        return { techId: t._id, name: t.fullName, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders };
+      });
+      // Jobs can be self-assigned to a supervisor/admin (not in the technician list) -
+      // add a row for any other assignee so their jobs are never silently hidden.
+      const knownIds = new Set(rows.map(r => r.techId));
+      const extraIds = Array.from(new Set(
+        ordersOnDate.map(o => this.techIdOf(o)).filter((id): id is string => !!id && !knownIds.has(id))
+      ));
+      if (!this.filterTech) {
+        for (const id of extraIds) {
+          const orders = ordersOnDate.filter(o => this.techIdOf(o) === id);
+          const hrs = orders.reduce((a, o) => a + this.durationOf(o), 0);
+          const name = orders[0]?.technician?.fullName || id;
+          rows.push({ techId: id, name, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders });
+        }
+      }
+      return rows;
+    }
+    const me = this.auth.currentUser;
+    return me ? [{ techId: me._id, name: me.fullName, hoursLabel: '', orders: ordersOnDate }] : [];
+  }
+
+  blockLeft(order: WorkOrder): string {
+    return `${(this.startOf(order) / 24 * 100).toFixed(2)}%`;
+  }
+  blockWidth(order: WorkOrder): string {
+    const start = this.startOf(order);
+    const dur = Math.min(this.durationOf(order), 24 - start);
+    return `${(dur / 24 * 100).toFixed(2)}%`;
+  }
+
+  // --- helpers ---------------------------------------------------------
+
+  private ordersOn(d: Date): WorkOrder[] {
+    return this.visibleOrders
+      .filter(o => this.isSameDay(new Date(o.plannedDate), d))
+      .sort((a, b) => this.startOf(a) - this.startOf(b));
+  }
+
+  private techIdOf(order: WorkOrder): string | null {
+    const t: any = order.technician;
+    if (!t) return null;
+    return typeof t === 'object' ? t._id : t;
+  }
+
+  private parseTime(t?: string): number | null {
+    if (!t) return null;
+    const parts = t.split(':').map(Number);
+    if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+    return parts[0] + parts[1] / 60;
+  }
+
+  private startOf(order: WorkOrder): number {
+    return this.parseTime(order.plannedStartTime) ?? 9;
+  }
+
+  private durationOf(order: WorkOrder): number {
+    const start = this.parseTime(order.plannedStartTime);
+    const end = this.parseTime(order.plannedEndTime);
+    if (start != null && end != null && end > start) return Math.round((end - start) * 10) / 10;
+    return 1;
+  }
+
+  timeWindow(order: WorkOrder): string {
+    return `${order.plannedStartTime || '--:--'} - ${order.plannedEndTime || '--:--'}`;
+  }
+
+  statusClass(status: string): string {
+    switch (status) {
+      case 'draft':
+      case 'pending_approval':
+      case 'rescheduled':
+        return 'st-warn';
+      case 'approved':
+        return 'st-info';
+      case 'in_progress':
+        return 'st-success';
+      case 'overdue':
+        return 'st-danger';
+      case 'cancelled':
+        return 'st-muted';
+      default:
+        return 'st-neutral';
+    }
+  }
+
+  isSameDay(d1: Date, d2: Date): boolean {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  }
+
+  initials(name?: string): string {
+    if (!name) return '';
+    return name.replace(/\s+/g, ' ').split(' ')[0].slice(0, 2);
+  }
+
+  private static readonly AVATAR_PALETTE = [
+    '#0d8f72', '#2563eb', '#7c5cd4', '#d9611f', '#8a7a1a', '#1b7ea8', '#b2457a', '#4a6b3a'
+  ];
+
+  avatarColor(seed?: string): string {
+    if (!seed) return 'var(--avatar)';
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    return CalendarComponent.AVATAR_PALETTE[hash % CalendarComponent.AVATAR_PALETTE.length];
   }
 
   viewOrder(id: string) {

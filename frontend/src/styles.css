@@ -1,1 +1,158 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global design tokens, ported from the Claude Design mockup's THEMES object. */
+@import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --page: #f4f5f6;
+  --surface: #ffffff;
+  --alt: #fafbfc;
+  --field: #ffffff;
+  --ink: #14161a;
+  --sub: #6b7280;
+  --line: #dfe1e5;
+  --line2: #ebedf0;
+  --avatar: #14161a;
+
+  --chrome: #14161a;
+  --chrome-alt: #1c1f25;
+  --chrome-ink: #ffffff;
+  --chrome-sub: #8f959e;
+  --chrome-line: #343841;
+
+  --accent: #2563eb;
+  --accent-hover: #1b4bc4;
+
+  --warn-bg: #fdf1dd;
+  --warn-line: #f0d9ad;
+  --warn-text: #8a5a10;
+
+  --danger-bg: #fdeee8;
+  --danger-line: #f7cfbe;
+  --danger-text: #8f2f09;
+
+  --info-bg: #eef2fe;
+  --info-line: #cdd9fb;
+  --info-text: #1b3fa8;
+
+  --success-bg: #e6f5f1;
+  --success-line: #bfe4da;
+  --success-text: #0b5f4c;
+
+  --today-bg: #fdf8e9;
+  --sel-bg: #f5f9ff;
+  --out-bg: #fafbfc;
+  --out-ink: #c3c8ce;
+
+  --theme-glyph: '\263E'; /* ☾ */
+  --radius: 10px;
+}
+
+:root[data-theme='dark'] {
+  --page: #0e1013;
+  --surface: #171a1f;
+  --alt: #1d2126;
+  --field: #1c2027;
+  --ink: #eef1f4;
+  --sub: #9aa1aa;
+  --line: #2c3238;
+  --line2: #242a30;
+  --avatar: #2c3238;
+
+  --chrome: #08090b;
+  --chrome-alt: #14171c;
+  --chrome-ink: #f2f5f8;
+  --chrome-sub: #8f959e;
+  --chrome-line: #2c3238;
+
+  --warn-bg: #2a2114;
+  --warn-line: #4a3a18;
+  --warn-text: #e6b467;
+
+  --danger-bg: #2b1711;
+  --danger-line: #53271a;
+  --danger-text: #f0977a;
+
+  --info-bg: #141d33;
+  --info-line: #24365e;
+  --info-text: #8fb3f8;
+
+  --success-bg: #10241f;
+  --success-line: #1e4438;
+  --success-text: #6fd3a8;
+
+  --today-bg: #20200f;
+  --sel-bg: #141c28;
+  --out-bg: #111418;
+  --out-ink: #4a5058;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--page);
+  color: var(--ink);
+  scrollbar-gutter: stable;
+}
+
+body {
+  font-family: 'Anuphan', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+button, input, select, textarea {
+  font-family: 'Anuphan', sans-serif;
+  border-radius: var(--radius);
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Shared modal entrance animations */
+@keyframes veilIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalIn { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes toastIn { from { opacity: 0; transform: translateX(26px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+/* ngx-toastr re-skin to match the design's toast tones */
+.toast-container .ngx-toastr {
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26);
+  animation: toastIn .22s ease both;
+  padding: 13px 14px 13px 50px;
+  background-position: 14px 14px !important;
+  width: min(360px, calc(100vw - 32px));
+}
+.toast-container .toast-success { background-color: #0d8f72 !important; }
+.toast-container .toast-error { background-color: #c2410c !important; }
+.toast-container .toast-warning { background-color: #b45309 !important; }
+.toast-container .toast-info { background-color: #2563eb !important; }
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: #8d949c66;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}

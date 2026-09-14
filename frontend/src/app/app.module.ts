@@ -15,6 +15,11 @@ import { WorkOrderFormComponent } from './components/work-order-form/work-order-
 import { WorkOrderDetailComponent } from './components/work-order-detail/work-order-detail.component';
 import { CancelledOrdersComponent } from './components/cancelled-orders/cancelled-orders.component';
 import { HospitalSettingsComponent } from './components/hospital-settings/hospital-settings.component';
+import { UserSettingsComponent } from './components/user-settings/user-settings.component';
+import { ProfileComponent } from './components/profile/profile.component';
+import { DatePickerComponent } from './components/date-picker/date-picker.component';
+import { TimePickerComponent } from './components/time-picker/time-picker.component';
+import { SelectComponent } from './components/select/select.component';
 
 @NgModule({
   declarations: [
@@ -24,7 +29,12 @@ import { HospitalSettingsComponent } from './components/hospital-settings/hospit
     WorkOrderFormComponent,
     WorkOrderDetailComponent,
     CancelledOrdersComponent,
-    HospitalSettingsComponent
+    HospitalSettingsComponent,
+    UserSettingsComponent,
+    ProfileComponent,
+    DatePickerComponent,
+    TimePickerComponent,
+    SelectComponent
   ],
   imports: [
     BrowserModule,
@@ -35,7 +45,9 @@ import { HospitalSettingsComponent } from './components/hospital-settings/hospit
     AppRoutingModule,
     ToastrModule.forRoot({
       positionClass: 'toast-top-right',
-      timeOut: 3000,
+      timeOut: 4200,
+      maxOpened: 3,
+      autoDismiss: true,
       preventDuplicates: true,
       progressBar: true,
       progressAnimation: 'increasing',

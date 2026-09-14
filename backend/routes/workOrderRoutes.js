@@ -11,6 +11,12 @@ const router = express.Router();
 const TECHNICIAN_ATTRS = ['id', 'fullName', 'username'];
 const APPROVER_ATTRS = ['id', 'fullName'];
 
+const DETAIL_INCLUDE = [
+  { model: User, as: 'technician', attributes: [...TECHNICIAN_ATTRS, 'email'] },
+  { model: User, as: 'approvedBy', attributes: APPROVER_ATTRS },
+  { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
+];
+
 // Helper: Generate SR Number
 const generateSRNumber = async () => {
   const now = new Date();
@@ -134,11 +140,7 @@ router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) =
 router.get('/:id', protect, async (req, res) => {
   try {
     const order = await WorkOrder.findByPk(req.params.id, {
-      include: [
-        { model: User, as: 'technician', attributes: [...TECHNICIAN_ATTRS, 'email'] },
-        { model: User, as: 'approvedBy', attributes: APPROVER_ATTRS },
-        { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
-      ]
+      include: DETAIL_INCLUDE
     });
 
     if (!order) {
@@ -164,7 +166,7 @@ router.get('/:id', protect, async (req, res) => {
 router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { approvalNote } = req.body;
-    const order = await WorkOrder.findByPk(req.params.id);
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
       return res.status(404).json({ message: 'Work order not found' });
@@ -179,6 +181,7 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
     order.approvedAt = new Date();
     if (approvalNote) order.approvalNote = approvalNote;
     await order.save();
+    await order.reload({ include: DETAIL_INCLUDE });
 
     // Notify technician
     await Notification.create({
@@ -207,7 +210,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
       return res.status(400).json({ message: 'Actual description is required' });
     }
 
-    const order = await WorkOrder.findByPk(req.params.id);
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
       return res.status(404).json({ message: 'Work order not found' });
@@ -246,7 +249,7 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
       return res.status(400).json({ message: 'New date and reason are required' });
     }
 
-    const order = await WorkOrder.findByPk(req.params.id);
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
       return res.status(404).json({ message: 'Work order not found' });
@@ -306,9 +309,7 @@ router.patch('/:id/cancel', protect, async (req, res) => {
       return res.status(400).json({ message: 'กรุณาระบุเหตุผลการยกเลิก' });
     }
 
-    const order = await WorkOrder.findByPk(req.params.id, {
-      include: [{ model: User, as: 'technician', attributes: TECHNICIAN_ATTRS }]
-    });
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
       return res.status(404).json({ message: 'ไม่พบงาน' });
@@ -363,6 +364,8 @@ router.patch('/:id/cancel', protect, async (req, res) => {
         });
       }
     }
+
+    await order.reload({ include: DETAIL_INCLUDE });
 
     res.json({
       success: true,

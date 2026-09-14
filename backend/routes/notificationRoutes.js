@@ -14,7 +14,7 @@ router.get('/', protect, async (req, res) => {
       where: { recipientId: req.user.id },
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
-      include: [{ model: WorkOrder, as: 'relatedWorkOrder', attributes: ['srNumber', 'customerName'] }]
+      include: [{ model: WorkOrder, as: 'relatedWorkOrder', attributes: ['id', 'srNumber', 'customerName'] }]
     });
     res.json(notifications);
   } catch (error) {

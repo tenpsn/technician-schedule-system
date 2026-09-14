@@ -2,112 +2,127 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
 import { HospitalService, Hospital } from '../../services/hospital.service';
+import { I18nService } from '../../services/i18n.service';
 
 @Component({
   selector: 'app-hospital-settings',
   standalone: false,
   template: `
-    <div class="container">
-      <div class="header">
-        <h2>🏥 ตั้งค่ารายชื่อโรงพยาบาล</h2>
-        <button (click)="back()" class="btn-back">← กลับ</button>
+    <div class="page">
+      <div class="card">
+        <div class="card-head">
+          <div class="head-title">{{ i18n.t['hospitalSettings'] }}</div>
+          <button (click)="back()" class="btn-ghost">← {{ i18n.t['back'] }}</button>
+        </div>
+
+        <form class="add-bar" [formGroup]="form" (ngSubmit)="onSubmit()">
+          <label class="field">
+            <span>{{ i18n.t['hospitalName'] }} *</span>
+            <input formControlName="name" type="text" [placeholder]="i18n.t['hospitalNamePh']">
+          </label>
+          <label class="field">
+            <span>{{ i18n.t['province'] }} *</span>
+            <input formControlName="province" type="text" [placeholder]="i18n.t['provincePh']">
+          </label>
+          <button type="submit" [disabled]="form.invalid || saving" class="btn-primary">
+            + {{ saving ? i18n.t['saving'] : i18n.t['addHospital'] }}
+          </button>
+        </form>
+
+        <div class="search-bar">
+          <div class="search-box">
+            <span>⌕</span>
+            <input type="text" [(ngModel)]="filterText" [placeholder]="i18n.t['searchList']" (ngModelChange)="applyFilter()">
+          </div>
+          <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredHospitals.length }} / {{ hospitals.length }}</span>
+        </div>
+
+        <div *ngIf="loading" class="empty-state">{{ i18n.t['loading'] }}</div>
+
+        <div *ngIf="!loading" class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>{{ i18n.t['hospitalName'] }}</th>
+                <th>{{ i18n.t['province'] }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let h of filteredHospitals">
+                <td>{{ h.name }}</td>
+                <td class="muted">{{ h.province }}</td>
+                <td class="actions-cell">
+                  <button (click)="confirmDelete(h)" class="btn-delete">{{ i18n.t['delete'] }}</button>
+                </td>
+              </tr>
+              <tr *ngIf="filteredHospitals.length === 0">
+                <td colspan="3" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <form class="add-form" [formGroup]="form" (ngSubmit)="onSubmit()">
-        <div class="form-group">
-          <label>ชื่อโรงพยาบาล *</label>
-          <input formControlName="name" type="text" placeholder="เช่น สูงเนิน">
-        </div>
-        <div class="form-group">
-          <label>จังหวัด *</label>
-          <input formControlName="province" type="text" placeholder="เช่น นครราชสีมา">
-        </div>
-        <button type="submit" [disabled]="form.invalid || saving" class="btn-add">
-          {{ saving ? 'กำลังเพิ่ม...' : '➕ เพิ่มโรงพยาบาล' }}
-        </button>
-      </form>
-
-      <div class="search-box">
-        <input type="text" [(ngModel)]="filterText" placeholder="🔍 ค้นหาในรายการ..." (ngModelChange)="applyFilter()">
-        <span class="count">ทั้งหมด {{ filteredHospitals.length }} / {{ hospitals.length }} รายการ</span>
-      </div>
-
-      <div *ngIf="loading" class="loading">กำลังโหลด...</div>
-
-      <table *ngIf="!loading" class="data-table">
-        <thead>
-          <tr>
-            <th>ชื่อโรงพยาบาล</th>
-            <th>จังหวัด</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let h of filteredHospitals">
-            <td>{{ h.name }}</td>
-            <td>{{ h.province }}</td>
-            <td class="actions-cell">
-              <button (click)="confirmDelete(h)" class="btn-delete">🗑️ ลบ</button>
-            </td>
-          </tr>
-          <tr *ngIf="filteredHospitals.length === 0">
-            <td colspan="3" class="empty-cell">ไม่พบข้อมูล</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div *ngIf="deleteTarget" class="modal">
-        <div class="modal-content">
-          <h3>ลบโรงพยาบาลนี้?</h3>
-          <p><strong>{{ deleteTarget.name }}</strong> ({{ deleteTarget.province }})</p>
+      <div *ngIf="deleteTarget" class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-title">{{ i18n.lang === 'th' ? 'ลบโรงพยาบาลนี้?' : 'Delete this hospital?' }}</div>
+          <div class="modal-body"><strong>{{ deleteTarget.name }}</strong> ({{ deleteTarget.province }})</div>
           <div class="modal-actions">
-            <button (click)="doDelete()" class="btn-confirm">✅ ลบ</button>
-            <button (click)="deleteTarget = null" class="btn-cancel-modal">❌ ยกเลิก</button>
+            <button (click)="doDelete()" class="btn-delete-solid">{{ i18n.t['delete'] }}</button>
+            <button (click)="deleteTarget = null" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
           </div>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    .container { max-width: 900px; margin: 20px auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0; }
-    .header h2 { margin: 0; color: #1976d2; }
-    .btn-back { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
-    .btn-back:hover { background: #f5f5f5; }
+    .page { padding: 24px 18px 44px; max-width: 980px; margin: 0 auto; }
+    .card { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line2); }
+    .head-title { font-size: 18px; font-weight: 700; }
+    .btn-ghost { border-radius: var(--radius); height: 40px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
 
-    .add-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; padding: 15px; background: #f9f9f9; border-radius: 6px; margin-bottom: 20px; }
-    .form-group { flex: 1; min-width: 180px; }
-    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; font-size: 13px; }
-    .form-group input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
-    .btn-add { padding: 10px 20px; border: none; border-radius: 4px; background: #4caf50; color: white; font-weight: bold; cursor: pointer; }
-    .btn-add:disabled { background: #ccc; cursor: not-allowed; }
-    .btn-add:hover:not(:disabled) { background: #45a049; }
+    .add-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 18px 20px; background: var(--alt); border-bottom: 1px solid var(--line2); }
+    .field { flex: 1 1 220px; display: flex; flex-direction: column; gap: 6px; }
+    .field span { font-size: 12px; color: var(--sub); }
+    .field input { border-radius: var(--radius); height: 46px; padding: 0 12px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 14px; outline: none; }
+    .field input:focus { border-color: var(--accent); }
+    .btn-primary { border-radius: var(--radius); height: 46px; padding: 0 20px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .search-box { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
-    .search-box input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-    .count { color: #666; font-size: 13px; white-space: nowrap; }
+    .search-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
+    .search-box { border-radius: var(--radius); flex: 1 1 260px; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border: 1px solid var(--line); background: var(--field); }
+    .search-box span { color: var(--sub); font-size: 13px; }
+    .search-box input { border: none; background: transparent; outline: none; font-size: 13.5px; width: 100%; color: var(--ink); }
+    .count { font-size: 12.5px; color: var(--sub); }
 
-    .loading { text-align: center; padding: 40px; color: #666; }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--sub); }
 
-    .data-table { width: 100%; border-collapse: collapse; }
-    .data-table th, .data-table td { padding: 10px 15px; text-align: left; border-bottom: 1px solid #eee; }
-    .data-table th { background: #1976d2; color: white; }
-    .data-table tr:hover { background: #f5f5f5; }
-    .actions-cell { text-align: right; }
-    .empty-cell { text-align: center; color: #999; padding: 30px; }
-    .btn-delete { padding: 6px 12px; border: none; border-radius: 4px; background: #f44336; color: white; cursor: pointer; font-size: 12px; }
-    .btn-delete:hover { background: #d32f2f; }
+    .table-scroll { overflow-x: auto; }
+    .data-table { width: 100%; min-width: 420px; border-collapse: collapse; }
+    .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
+    .data-table td { padding: 12px 20px; border-bottom: 1px solid var(--line2); font-size: 13.5px; }
+    .muted { color: var(--sub); }
+    .actions-cell { text-align: right; padding-right: 20px; }
+    .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
+    .btn-delete { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--danger-line); background: var(--danger-bg); color: var(--danger-text); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-delete:hover { filter: brightness(1.07); }
 
-    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-    .modal-content { background: white; padding: 30px; border-radius: 8px; max-width: 400px; width: 100%; }
-    .modal-content h3 { margin: 0 0 15px 0; color: #333; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 25px; }
-    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; }
-    .btn-confirm { background: #f44336; color: white; }
-    .btn-cancel-modal { background: #f5f5f5; color: #333; }
+    .modal-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62); display: flex; align-items: center; justify-content: center; padding: 18px; animation: veilIn .16s ease both; }
+    .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease both; }
+    .modal-title { font-size: 18px; font-weight: 700; }
+    .modal-body { margin-top: 10px; font-size: 14px; color: var(--ink); }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions button { flex: 1; height: 46px; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer; }
+    .btn-delete-solid { border: 1px solid #a5320c; background: #d94a20; color: #fff; }
+    .btn-delete-solid:hover { filter: brightness(1.05); }
 
     @media (max-width: 768px) {
-      .add-form { flex-direction: column; align-items: stretch; }
+      .add-bar { flex-direction: column; align-items: stretch; }
+      .add-bar .field { flex: 1 1 auto; }
     }
   `]
 })
@@ -123,6 +138,7 @@ export class HospitalSettingsComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private hospitalService: HospitalService,
+    public i18n: I18nService,
     private toastr: ToastrService,
     private cdr: ChangeDetectorRef
   ) {
@@ -146,7 +162,7 @@ export class HospitalSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error('โหลดรายชื่อโรงพยาบาลไม่สำเร็จ');
+        this.toastr.error(this.i18n.lang === 'th' ? 'โหลดรายชื่อโรงพยาบาลไม่สำเร็จ' : 'Failed to load hospitals');
         console.error(err);
         this.loading = false;
         this.cdr.detectChanges();
@@ -171,13 +187,13 @@ export class HospitalSettingsComponent implements OnInit {
       next: (hospital) => {
         this.hospitals = [...this.hospitals, hospital].sort((a, b) => a.name.localeCompare(b.name));
         this.applyFilter();
-        this.toastr.success(`เพิ่ม ${hospital.name} สำเร็จ`);
+        this.toastr.success(`${this.i18n.t['toastHospital']} · ${hospital.name}`);
         this.form.reset();
         this.saving = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'เกิดข้อผิดพลาด');
+        this.toastr.error(err.error?.message || 'Error');
         this.saving = false;
         this.cdr.detectChanges();
       }
@@ -196,12 +212,12 @@ export class HospitalSettingsComponent implements OnInit {
       next: () => {
         this.hospitals = this.hospitals.filter(h => h._id !== target._id);
         this.applyFilter();
-        this.toastr.success(`ลบ ${target.name} สำเร็จ`);
+        this.toastr.success(`${this.i18n.t['toastDeleted']} · ${target.name}`);
         this.deleteTarget = null;
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'เกิดข้อผิดพลาด');
+        this.toastr.error(err.error?.message || 'Error');
         this.deleteTarget = null;
         this.cdr.detectChanges();
       }

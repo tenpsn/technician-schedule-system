@@ -2,240 +2,204 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { WorkOrderService, WorkOrder } from '../../services/work-order.service';
 import { AuthService } from '../../services/auth.service';
+import { I18nService } from '../../services/i18n.service';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
+
+const REASON_KEYS_TH = ['ลูกค้าขอยกเลิกเนื่องจากเปลี่ยนผู้ให้บริการ', 'อุปกรณ์/อะไหล่ไม่พร้อม', 'ติดงานอื่นที่เร่งด่วนกว่า', 'สภาพอากาศไม่เอื้ออำนวย', 'ลูกค้าเลื่อนออกไปไม่มีกำหนด', 'อื่นๆ (ระบุเอง)'];
+const REASON_LABELS_TH = ['ลูกค้าขอยกเลิก', 'อุปกรณ์ไม่พร้อม', 'ติดงานเร่งด่วน', 'สภาพอากาศ', 'ลูกค้าเลื่อนไม่มีกำหนด', 'อื่นๆ'];
+const REASON_KEYS_EN = ['Customer requested cancellation (switched provider)', 'Parts/equipment not ready', 'Higher-priority job conflict', 'Weather', 'Customer postponed indefinitely', 'Other (specify)'];
+const REASON_LABELS_EN = ['Customer cancelled', 'Parts not ready', 'Urgent job conflict', 'Weather', 'Postponed indefinitely', 'Other'];
+
+type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' | 'postpone-done' | 'actual' | 'actual-done' | null;
 
 @Component({
   selector: 'app-work-order-detail',
   standalone: false,
   template: `
-    <div class="detail-container" *ngIf="order">
-      <div class="header">
-        <button (click)="back()" class="btn-back">← กลับ</button>
-        <h2>รายละเอียดงาน: {{ order.srNumber }}</h2>
-      </div>
-      
-      <div class="status-badge" [class]="order.status">
-        {{ getStatusText(order.status) }}
-      </div>
+    <div class="page" *ngIf="order">
+      <div class="card">
+        <div class="card-head">
+          <button (click)="back()" class="btn-ghost">← {{ i18n.t['back'] }}</button>
+          <div class="head-title">{{ i18n.t['jobDetail'] }}: <span class="mono">{{ order.srNumber }}</span></div>
+          <div class="spacer"></div>
+          <span class="badge" [ngClass]="statusClass(order.status)">{{ i18n.statusLabel(order.status) }}</span>
+        </div>
 
-      <div *ngIf="order.isOverdue" class="alert-box alert-warning">
-        ⚠️ งานค้าง {{ order.overdueDays }} วัน
-      </div>
+        <div class="card-body">
+          <div class="alert-warn" *ngIf="order.isOverdue">
+            ⚠ {{ i18n.t['overdueAlert'] }}: {{ order.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}
+          </div>
 
-      <!-- แสดงข้อมูลการยกเลิก -->
-      <div *ngIf="order.status === 'cancelled'" class="alert-box alert-cancelled">
-        <h3>🚫 งานนี้ถูกยกเลิกแล้ว</h3>
-        <div class="info-grid">
-          <div class="info-item">
-            <label>ผู้ยกเลิก</label>
-            <div>{{ order.cancelledBy?.fullName }}</div>
+          <div class="alert-muted" *ngIf="order.status === 'cancelled'">
+            <div class="alert-title">✕ {{ i18n.t['cancelledInfo'] }}</div>
+            <div class="meta-grid">
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledBy'] }}</div><div class="meta-value">{{ order.cancelledBy?.fullName }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledAt'] }}</div><div class="meta-value">{{ order.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</div></div>
+            </div>
+            <div class="reason-box">
+              <div class="meta-label">{{ i18n.t['cancelReason'] }}</div>
+              <p>{{ order.cancelReason }}</p>
+            </div>
           </div>
-          <div class="info-item">
-            <label>เวลายกเลิก</label>
-            <div>{{ order.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</div>
-          </div>
-        </div>
-        <div class="cancel-reason">
-          <label>เหตุผลการยกเลิก</label>
-          <p>{{ order.cancelReason }}</p>
-        </div>
-      </div>
 
-      <div class="info-grid">
-        <div class="info-item">
-          <label>ลูกค้า</label>
-          <div class="value">{{ order.customerName }}</div>
-        </div>
-        <div class="info-item">
-          <label>สถานที่</label>
-          <div class="value">{{ order.customerLocation }}</div>
-        </div>
-        <div class="info-item">
-          <label>ประเภทงาน</label>
-          <div class="value">{{ order.workType }}</div>
-        </div>
-        <div class="info-item">
-          <label>ช่างผู้รับผิดชอบ</label>
-          <div class="value">{{ order.technician?.fullName }}</div>
-        </div>
-      </div>
+          <div class="meta-grid">
+            <div class="meta-item"><div class="meta-label">{{ i18n.t['customer'] }}</div><div class="meta-value">{{ order.customerName }}</div></div>
+            <div class="meta-item"><div class="meta-label">{{ i18n.t['site'] }}</div><div class="meta-value">{{ order.customerLocation }}</div></div>
+            <div class="meta-item"><div class="meta-label">{{ i18n.t['jobType'] }}</div><div class="meta-value">{{ i18n.typeLabel(order.workType) }}</div></div>
+            <div class="meta-item"><div class="meta-label">{{ i18n.t['owner'] }}</div><div class="meta-value">{{ order.technician?.fullName }}</div></div>
+          </div>
 
-      <!-- Planning Section -->
-      <div class="section">
-        <h3>📋 Planning (แผนงาน)</h3>
-        <div class="info-grid">
-          <div class="info-item">
-            <label>วันที่วางแผน</label>
-            <div class="value">{{ order.plannedDate | date:'dd/MM/yyyy' }}</div>
+          <div class="section">
+            <div class="section-title">{{ i18n.t['planning'] }}</div>
+            <div class="meta-grid">
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['planDate'] }}</div><div class="meta-value mono">{{ order.plannedDate | date:'dd/MM/yyyy' }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['timeLabel'] }}</div><div class="meta-value mono">{{ order.plannedStartTime }} - {{ order.plannedEndTime }}</div></div>
+            </div>
+            <div class="field-list" *ngIf="order.description">
+              <div class="field-row"><span class="field-label">{{ i18n.t['jobDesc'] }}</span><span class="field-value">{{ order.description }}</span></div>
+            </div>
           </div>
-          <div class="info-item">
-            <label>เวลา</label>
-            <div class="value">{{ order.plannedStartTime }} - {{ order.plannedEndTime }}</div>
-          </div>
-        </div>
-        <div *ngIf="order.description" class="description">
-          <label>รายละเอียด</label>
-          <p>{{ order.description }}</p>
-        </div>
-      </div>
 
-      <!-- Actual Section -->
-      <div class="section" *ngIf="order.actualDescription">
-        <h3>✅ Actual (งานจริง)</h3>
-        <div class="info-grid">
-          <div class="info-item">
-            <label>วันที่ทำงานจริง</label>
-            <div class="value">{{ order.actualDate | date:'dd/MM/yyyy' }}</div>
+          <div class="section" *ngIf="order.actualDescription">
+            <div class="section-title">✓ Actual</div>
+            <div class="meta-grid">
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['actualDate'] }}</div><div class="meta-value mono">{{ order.actualDate | date:'dd/MM/yyyy' }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['timeLabel'] }}</div><div class="meta-value mono">{{ order.actualStartTime }} - {{ order.actualEndTime }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['actualLocation'] }}</div><div class="meta-value">{{ order.actualLocation }}</div></div>
+            </div>
+            <div class="field-list">
+              <div class="field-row"><span class="field-label">{{ i18n.t['actualDescription'] }}</span><span class="field-value">{{ order.actualDescription }}</span></div>
+            </div>
           </div>
-          <div class="info-item">
-            <label>เวลา</label>
-            <div class="value">{{ order.actualStartTime }} - {{ order.actualEndTime }}</div>
-          </div>
-          <div class="info-item">
-            <label>สถานที่จริง</label>
-            <div class="value">{{ order.actualLocation }}</div>
+
+          <div class="section" *ngIf="order.rescheduleHistory && order.rescheduleHistory.length > 0">
+            <div class="section-title">↻ {{ i18n.t['rescheduleHistory'] }}</div>
+            <div class="history-item" *ngFor="let h of order.rescheduleHistory">
+              <div class="history-date mono">{{ h.fromDate | date:'dd/MM/yyyy' }} → {{ h.toDate | date:'dd/MM/yyyy' }}</div>
+              <div class="history-reason">{{ i18n.t['reasonWord'] }}: {{ h.reason }}</div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedBy?.fullName || '—' }} · {{ h.changedAt | date:'dd/MM/yyyy HH:mm' }}</div>
+            </div>
           </div>
         </div>
-        <div class="description">
-          <label>รายละเอียดงานจริง</label>
-          <p>{{ order.actualDescription }}</p>
+
+        <div class="actions" *ngIf="order.status !== 'cancelled' && order.status !== 'completed'">
+          <button *ngIf="canReschedule" (click)="showRescheduleForm = true" class="btn-postpone">{{ i18n.t['postpone'] }}</button>
+          <button *ngIf="canCancel" (click)="openCancel()" class="btn-cancel">{{ i18n.t['cancelJob'] }}</button>
+          <button *ngIf="canApprove" (click)="showApproveModal = true" class="btn-approve">{{ i18n.t['approvePlan'] }}</button>
+          <button *ngIf="canUpdateActual" (click)="showActualForm = true" class="btn-update">{{ i18n.t['updateStatus'] }}</button>
         </div>
       </div>
 
-      <!-- Reschedule History -->
-      <div class="section" *ngIf="(order.rescheduleHistory?.length ?? 0) > 0">
-        <h3>🔄 ประวัติการเลื่อน</h3>
-        <div *ngFor="let h of order.rescheduleHistory" class="history-item">
-          <div class="history-date">
-            {{ h.fromDate | date:'dd/MM/yyyy' }} → {{ h.toDate | date:'dd/MM/yyyy' }}
+      <!-- Cancel modal (two-stage: edit reason -> review & confirm) -->
+      <div *ngIf="showCancelForm" class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-icon-row">
+            <span class="modal-icon st-danger">✕</span>
+            <div>
+              <div class="modal-title">{{ i18n.t['cancelJob'] }}</div>
+              <div class="modal-sub mono">{{ order.srNumber }} · {{ order.customerName }}</div>
+            </div>
           </div>
-          <div class="history-reason">เหตุผล: {{ h.reason }}</div>
-          <div class="history-by">โดย: {{ h.changedBy?.fullName || 'ไม่ทราบ' }} | {{ h.changedAt | date:'dd/MM/yyyy HH:mm' }}</div>
-        </div>
-      </div>
 
-      <!-- Action Buttons -->
-      <div class="actions" *ngIf="order.status !== 'cancelled' && order.status !== 'completed'">
-        <button *ngIf="canUpdateActual" (click)="showActualForm = true" class="btn-actual">
-           บันทึกงานจริง
-        </button>
-        
-        <button *ngIf="canReschedule" (click)="showRescheduleForm = true" class="btn-reschedule">
-          🔄 เลื่อนงาน
-        </button>
-        
-        <button *ngIf="canCancel" (click)="showCancelForm = true" class="btn-cancel-action">
-           ยกเลิกงาน
-        </button>
-        
-        <button *ngIf="canApprove" (click)="approve()" class="btn-approve">
-          ✅ อนุมัติแผนงาน
-        </button>
-      </div>
-
-      <!-- Cancel Form Modal -->
-      <div *ngIf="showCancelForm" class="modal">
-        <div class="modal-content">
-          <h3> ยกเลิกงาน</h3>
-          <div class="warning-box">
-            ⚠️ การยกเลิกงานจะไม่สามารถกู้คืนได้ กรุณาระบุเหตุผลให้ชัดเจน
-          </div>
-          <form [formGroup]="cancelForm" (ngSubmit)="submitCancel()">
-            <div class="form-group">
-              <label>เหตุผลการยกเลิก *</label>
-              <textarea formControlName="cancelReason" rows="4"
-                        placeholder="เช่น ลูกค้าขอยกเลิก, อุปกรณ์ไม่พร้อม, ติดงานอื่นที่เร่งด่วนกว่า..."></textarea>
-              <div *ngIf="cancelForm.get('cancelReason')?.invalid &&
-                          cancelForm.get('cancelReason')?.touched"
-                   class="error-message">
-                กรุณาระบุเหตุผลการยกเลิก
+          <ng-container *ngIf="cancelStage === 'edit'">
+            <div class="warn-box">⚠ {{ i18n.t['cancelWarn'] }}</div>
+            <form [formGroup]="cancelForm" (ngSubmit)="goConfirmCancelStage()">
+              <label class="field">
+                <span>{{ i18n.t['cancelReason'] }} *</span>
+                <textarea formControlName="cancelReason" rows="4" [placeholder]="i18n.t['cancelReasonPh']"></textarea>
+              </label>
+              <div class="mono kicker">{{ i18n.t['commonReasons'] }}</div>
+              <div class="chip-row">
+                <button type="button" *ngFor="let r of reasonChips" class="chip" (click)="setQuickReason(r.value)">{{ r.label }}</button>
               </div>
-            </div>
-            
-            <div class="quick-reasons">
-              <label>เหตุผลทั่วไป (คลิกเพื่อเลือก):</label>
-              <div class="reason-buttons">
-                <button type="button" (click)="setQuickReason('ลูกค้าขอยกเลิกเนื่องจากเปลี่ยนผู้ให้บริการ')">ลูกค้าขอยกเลิก</button>
-                <button type="button" (click)="setQuickReason('อุปกรณ์/อะไหล่ไม่พร้อม')">อุปกรณ์ไม่พร้อม</button>
-                <button type="button" (click)="setQuickReason('ติดงานอื่นที่เร่งด่วนกว่า')">ติดงานเร่งด่วน</button>
-                <button type="button" (click)="setQuickReason('สภาพอากาศไม่เอื้ออำนวย')">สภาพอากาศ</button>
-                <button type="button" (click)="setQuickReason('ลูกค้าเลื่อนออกไปไม่มีกำหนด')">ลูกค้าเลื่อนไม่มีกำหนด</button>
-                <button type="button" (click)="setQuickReason('อื่นๆ (ระบุเอง)')">อื่นๆ</button>
+              <div class="modal-actions">
+                <button type="submit" class="btn-cancel">{{ i18n.t['confirmCancel'] }}</button>
+                <button type="button" (click)="closeCancelModal()" class="btn-ghost">{{ i18n.t['back'] }}</button>
               </div>
-            </div>
-            
-            <div class="modal-actions">
-              <button type="submit" [disabled]="cancelForm.invalid" class="btn-confirm-cancel">
-                ✅ ยืนยันการยกเลิก
-              </button>
-              <button type="button" (click)="showCancelForm = false" class="btn-cancel-modal">
-                ❌ กลับ
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+            </form>
+          </ng-container>
 
-      <!-- Actual Form Modal -->
-      <div *ngIf="showActualForm" class="modal">
-        <div class="modal-content">
-          <h3>📝 บันทึกงานจริง (Actual)</h3>
-          <form [formGroup]="actualForm" (ngSubmit)="submitActual()">
-            <div class="form-group">
-              <label>วันที่ทำงานจริง *</label>
-              <input formControlName="actualDate" type="date">
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>เวลาเริ่ม</label>
-                <input formControlName="actualStartTime" type="time">
-              </div>
-              <div class="form-group">
-                <label>เวลาสิ้นสุด</label>
-                <input formControlName="actualEndTime" type="time">
-              </div>
-            </div>
-            <div class="form-group">
-              <label>สถานที่จริง</label>
-              <input formControlName="actualLocation" type="text" 
-                     [value]="order.customerLocation">
-            </div>
-            <div class="form-group">
-              <label>รายละเอียดงานที่ทำได้จริง *</label>
-              <textarea formControlName="actualDescription" rows="4"
-                        placeholder="บรรยายงานที่ได้ทำจริง..."></textarea>
+          <ng-container *ngIf="cancelStage === 'confirm'">
+            <div class="review-box st-danger-bg">
+              <div class="mono kicker-strong">{{ i18n.t['confirmStep'] }}</div>
+              <div class="review-title">{{ i18n.t['confirmCancelQ'] }} {{ order.srNumber }}</div>
+              <div class="review-line">{{ i18n.t['reasonWord'] }}: {{ cancelForm.value.cancelReason }}</div>
+              <div class="review-warn">⚠ {{ i18n.t['irreversible'] }}</div>
             </div>
             <div class="modal-actions">
-              <button type="submit" class="btn-submit">💾 บันทึก</button>
-              <button type="button" (click)="showActualForm = false" class="btn-cancel-modal">❌ ยกเลิก</button>
+              <button type="button" [disabled]="busy === 'cancel'" (click)="confirmCancel()" class="btn-cancel">{{ confirmCancelLabel }}</button>
+              <button type="button" [disabled]="busy === 'cancel'" (click)="backToEditCancel()" class="btn-ghost">{{ i18n.t['reviewEdit'] }}</button>
             </div>
-          </form>
+          </ng-container>
         </div>
       </div>
 
-      <!-- Reschedule Form Modal -->
-      <div *ngIf="showRescheduleForm" class="modal">
-        <div class="modal-content">
-          <h3>🔄 เลื่อนงาน</h3>
+      <!-- Approve modal -->
+      <div *ngIf="showApproveModal" class="modal-overlay">
+        <div class="modal-card modal-card-narrow">
+          <div class="modal-icon-row">
+            <span class="modal-icon st-info">✓</span>
+            <div class="modal-title">{{ i18n.t['approveTitle'] }}</div>
+          </div>
+          <div class="modal-body-text">{{ i18n.t['approveBody'] }}</div>
+          <div class="summary-box">
+            <div class="mono kicker">{{ order.srNumber }}</div>
+            <div class="review-title">{{ order.customerName }}</div>
+            <div class="summary-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.plannedDate | date:'dd/MM/yyyy' }} · {{ order.plannedStartTime }}-{{ order.plannedEndTime }}</div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" [disabled]="busy === 'approve'" (click)="confirmApprove()" class="btn-approve">{{ approveConfirmLabel }}</button>
+            <button type="button" [disabled]="busy === 'approve'" (click)="showApproveModal = false" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Postpone (reschedule) modal -->
+      <div *ngIf="showRescheduleForm" class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-title">{{ i18n.t['postpone'] }}</div>
           <form [formGroup]="rescheduleForm" (ngSubmit)="submitReschedule()">
-            <div class="form-group">
-              <label>วันที่ใหม่ *</label>
-              <input formControlName="newDate" type="date">
-            </div>
-            <div class="form-group">
-              <label>เหตุผลที่เลื่อน *</label>
-              <textarea formControlName="reason" rows="3"
-                        placeholder="อธิบายเหตุผลที่ต้องเลื่อน..."></textarea>
-              <div *ngIf="rescheduleForm.get('reason')?.invalid &&
-                          rescheduleForm.get('reason')?.touched"
-                   class="error-message">
-                กรุณาระบุเหตุผลที่เลื่อน
-              </div>
-            </div>
+            <label class="field">
+              <span>{{ i18n.t['newDate'] }} *</span>
+              <app-date-picker formControlName="newDate"></app-date-picker>
+            </label>
+            <label class="field">
+              <span>{{ i18n.t['postponeReason'] }} *</span>
+              <textarea formControlName="reason" rows="4" [placeholder]="i18n.t['postponeReasonPh']"></textarea>
+            </label>
             <div class="modal-actions">
-              <button type="submit" class="btn-submit">✅ ยืนยันการเลื่อน</button>
-              <button type="button" (click)="showRescheduleForm = false" class="btn-cancel-modal">❌ ยกเลิก</button>
+              <button type="submit" [disabled]="busy === 'postpone'" class="btn-update">{{ confirmPostponeLabel }}</button>
+              <button type="button" [disabled]="busy === 'postpone'" (click)="showRescheduleForm = false" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Actual work modal -->
+      <div *ngIf="showActualForm" class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-title">{{ i18n.t['updateStatus'] }}</div>
+          <form [formGroup]="actualForm" (ngSubmit)="submitActual()">
+            <label class="field">
+              <span>{{ i18n.t['actualDate'] }} *</span>
+              <app-date-picker formControlName="actualDate"></app-date-picker>
+            </label>
+            <div class="field-row-pair">
+              <label class="field"><span>{{ i18n.t['startTime'] }}</span><app-time-picker formControlName="actualStartTime"></app-time-picker></label>
+              <label class="field"><span>{{ i18n.t['endTime'] }}</span><app-time-picker formControlName="actualEndTime"></app-time-picker></label>
+            </div>
+            <label class="field">
+              <span>{{ i18n.t['actualLocation'] }}</span>
+              <input formControlName="actualLocation" type="text">
+            </label>
+            <label class="field">
+              <span>{{ i18n.t['actualDescription'] }} *</span>
+              <textarea formControlName="actualDescription" rows="4"></textarea>
+            </label>
+            <div class="modal-actions">
+              <button type="submit" [disabled]="busy === 'actual'" class="btn-update">{{ saveActualLabel }}</button>
+              <button type="button" [disabled]="busy === 'actual'" (click)="showActualForm = false" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
             </div>
           </form>
         </div>
@@ -243,85 +207,103 @@ import { ToastrService } from 'ngx-toastr';
     </div>
   `,
   styles: [`
-    .detail-container { max-width: 1000px; margin: 20px auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
-    .btn-back { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
-    .btn-back:hover { background: #f5f5f5; }
-    .header h2 { margin: 0; color: #1976d2; }
-    
-    .status-badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: bold; margin-bottom: 15px; font-size: 14px; }
-    .status-badge.approved { background: #e8f5e9; color: #2e7d32; }
-    .status-badge.pending_approval { background: #fff3e0; color: #ef6c00; }
-    .status-badge.completed { background: #e3f2fd; color: #1565c0; }
-    .status-badge.overdue { background: #ffebee; color: #c62828; }
-    .status-badge.cancelled { background: #424242; color: white; }
-    .status-badge.draft { background: #f5f5f5; color: #616161; }
-    .status-badge.in_progress { background: #fff9c4; color: #f57f17; }
-    
-    .alert-box { padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-    .alert-warning { background: #fff3e0; border-left: 4px solid #ff9800; color: #e65100; }
-    .alert-cancelled { background: #f5f5f5; border-left: 4px solid #424242; }
-    .alert-cancelled h3 { margin: 0 0 15px 0; color: #424242; }
-    
-    .cancel-reason { margin-top: 15px; }
-    .cancel-reason label { font-size: 12px; color: #666; display: block; margin-bottom: 5px; }
-    .cancel-reason p { background: white; padding: 12px; border-radius: 4px; margin: 0; font-style: italic; border: 1px solid #ddd; }
-    
-    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .info-item label { font-size: 12px; color: #666; display: block; margin-bottom: 3px; }
-    .info-item .value { font-weight: bold; font-size: 15px; color: #333; }
-    
-    .section { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 15px; }
-    .section h3 { margin: 0 0 15px 0; color: #333; font-size: 16px; border-left: 4px solid #1976d2; padding-left: 10px; }
-    .description label { font-size: 12px; color: #666; display: block; margin-bottom: 5px; }
-    .description p { background: white; padding: 12px; border-radius: 4px; margin: 0; border: 1px solid #ddd; }
-    
-    .history-item { background: #fff3e0; padding: 12px; margin: 8px 0; border-radius: 4px; border-left: 3px solid #ff9800; }
-    .history-date { font-weight: bold; margin-bottom: 5px; }
-    .history-reason { color: #666; margin-bottom: 5px; }
-    .history-by { font-size: 12px; color: #999; }
-    
-    .actions { margin-top: 25px; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 20px; border-top: 2px solid #f0f0f0; }
-    .actions button { padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
-    .actions button:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-    .btn-actual { background: #4caf50; color: white; }
-    .btn-reschedule { background: #ff9800; color: white; }
-    .btn-cancel-action { background: #f44336; color: white; }
-    .btn-approve { background: #2196f3; color: white; }
-    
-    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-    .modal-content { background: white; padding: 30px; border-radius: 8px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; }
-    .modal-content h3 { margin: 0 0 20px 0; color: #333; }
-    .form-group { margin-bottom: 15px; }
-    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-    .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
-    .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #1976d2; }
-    .form-row { display: flex; gap: 15px; }
-    .form-row .form-group { flex: 1; }
-    .error-message { color: #f44336; font-size: 12px; margin-top: 5px; }
-    
-    .warning-box { background: #fff3e0; border-left: 4px solid #ff9800; padding: 15px; margin-bottom: 20px; border-radius: 4px; color: #e65100; font-weight: bold; }
-    
-    .quick-reasons { margin-bottom: 20px; }
-    .quick-reasons label { display: block; margin-bottom: 10px; font-size: 13px; color: #666; font-weight: bold; }
-    .reason-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
-    .reason-buttons button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 20px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
-    .reason-buttons button:hover { background: #f44336; color: white; border-color: #f44336; }
-    
-    .modal-actions { display: flex; gap: 10px; margin-top: 25px; }
-    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; }
-    .btn-submit { background: #4caf50; color: white; }
-    .btn-confirm-cancel { background: #f44336; color: white; }
-    .btn-confirm-cancel:disabled { background: #ccc; cursor: not-allowed; }
-    .btn-cancel-modal { background: #f5f5f5; color: #333; }
-    .btn-submit:hover, .btn-confirm-cancel:hover:not(:disabled), .btn-cancel-modal:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
-    
+    .page { padding: 24px 18px 44px; max-width: 1040px; margin: 0 auto; }
+    .card { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+    .card-head { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
+    .head-title { font-size: 19px; font-weight: 700; }
+    .spacer { flex: 1; }
+    .btn-ghost { border-radius: var(--radius); height: 40px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    .badge { border-radius: var(--radius); font-size: 12px; font-weight: 600; padding: 5px 11px; }
+    .st-warn { color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); }
+    .st-info { color: var(--info-text); background: var(--info-bg); border: 1px solid var(--info-line); }
+    .st-success { color: var(--success-text); background: var(--success-bg); border: 1px solid var(--success-line); }
+    .st-neutral { color: var(--sub); background: var(--alt); border: 1px solid var(--line2); }
+    .st-danger { color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-line); }
+    .st-muted { color: var(--sub); background: var(--alt); border: 1px solid var(--line2); text-decoration: line-through; }
+
+    .card-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    .alert-warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); padding: 12px 14px; border-radius: var(--radius); font-weight: 600; }
+    .alert-muted { background: var(--alt); border: 1px solid var(--line2); border-radius: var(--radius); padding: 16px 18px; }
+    .alert-title { font-weight: 700; margin-bottom: 12px; }
+    .reason-box { margin-top: 12px; }
+    .reason-box p { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 6px 0 0; font-style: italic; }
+
+    .meta-grid { display: flex; flex-wrap: wrap; gap: 22px; }
+    .meta-item { flex: 1 1 180px; min-width: 150px; }
+    .meta-label { font-size: 12px; color: var(--sub); }
+    .meta-value { font-size: 16px; font-weight: 600; margin-top: 3px; line-height: 1.4; }
+
+    .section { border-radius: var(--radius); background: var(--alt); border: 1px solid var(--line2); padding: 16px 18px; }
+    .section-title { font-size: 13.5px; font-weight: 700; padding-left: 10px; border-left: 3px solid var(--accent); }
+    .section .meta-grid { margin-top: 14px; }
+
+    .field-list { display: flex; flex-direction: column; margin-top: 12px; }
+    .field-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line2); }
+    .field-label { width: 160px; flex: none; font-size: 12.5px; color: var(--sub); }
+    .field-value { font-size: 13.5px; font-weight: 500; }
+
+    .history-item { background: var(--warn-bg); padding: 12px; margin: 8px 0; border-radius: var(--radius); border-left: 3px solid #d98b1e; }
+    .history-date { font-weight: 700; margin-bottom: 5px; }
+    .history-reason { color: var(--sub); margin-bottom: 5px; }
+    .history-by { font-size: 12px; color: var(--sub); }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line2); background: var(--alt); }
+    .actions button { border-radius: var(--radius); height: 46px; padding: 0 18px; font-size: 14px; font-weight: 700; }
+    .btn-postpone { border: 1px solid #b45309; background: #f0b356; color: #3d2703; }
+    .btn-cancel { border: 1px solid #a5320c; background: #d94a20; color: #fff; }
+    .btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-approve { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+    .btn-update { border: 1px solid #0b7a5f; background: #0d8f72; color: #fff; }
+    .actions button:hover { filter: brightness(1.05); }
+
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62);
+      display: flex; align-items: center; justify-content: center; padding: 18px;
+      animation: veilIn .16s ease both;
+    }
+    .modal-card {
+      border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; scrollbar-gutter: stable;
+      background: var(--surface); border: 1px solid var(--line); padding: 22px;
+      animation: modalIn .2s ease both;
+    }
+    .modal-card-narrow { max-width: 460px; }
+    .modal-icon-row { display: flex; align-items: center; gap: 12px; }
+    .modal-icon { width: 38px; height: 38px; flex: none; border-radius: 12px; display: grid; place-items: center; font-size: 16px; }
+    .modal-title { font-size: 19px; font-weight: 700; }
+    .modal-sub { font-size: 11.5px; color: var(--sub); }
+    .modal-body-text { font-size: 14px; color: var(--sub); line-height: 1.65; margin-top: 12px; }
+    .warn-box { border-radius: var(--radius); display: flex; gap: 10px; margin-top: 14px; padding: 12px 14px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); font-weight: 600; font-size: 13.5px; }
+
+    .review-box { border-radius: 12px; margin-top: 16px; padding: 15px; }
+    .st-danger-bg { background: var(--danger-bg); border: 1px solid var(--danger-line); }
+    .kicker-strong { font-size: 10.5px; letter-spacing: 0.12em; color: var(--danger-text); }
+    .review-title { font-size: 15.5px; font-weight: 700; margin-top: 7px; line-height: 1.45; }
+    .review-line { font-size: 13.5px; color: var(--ink); line-height: 1.6; margin-top: 8px; }
+    .review-warn { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--danger-line); font-size: 12.5px; font-weight: 600; color: var(--danger-text); }
+
+    .summary-box { border-radius: 12px; margin-top: 16px; padding: 13px 14px; background: var(--alt); border: 1px solid var(--line2); }
+    .summary-sub { font-size: 13px; color: var(--sub); margin-top: 3px; }
+
+    .field { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
+    .field span { font-size: 12.5px; color: var(--sub); }
+    .field input, .field textarea { border-radius: var(--radius); padding: 11px 12px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 14px; outline: none; }
+    .field input { height: 48px; }
+    .field input:focus, .field textarea:focus { border-color: var(--accent); }
+    .field-row-pair { display: flex; gap: 15px; margin-top: 14px; }
+    .field-row-pair .field { flex: 1; margin-top: 0; }
+    .kicker { font-size: 12.5px; color: var(--sub); margin-top: 14px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+    .chip { height: 38px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 19px; font-size: 13px; }
+    .chip:hover { border-color: var(--accent); }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+    .modal-actions button { flex: 1 1 150px; height: 50px; border-radius: var(--radius); font-size: 14.5px; font-weight: 700; }
+
     @media (max-width: 768px) {
       .actions { flex-direction: column; }
       .actions button { width: 100%; }
-      .form-row { flex-direction: column; }
-      .reason-buttons { flex-direction: column; }
-      .reason-buttons button { width: 100%; }
+      .field-row-pair { flex-direction: column; }
     }
   `]
 })
@@ -330,6 +312,9 @@ export class WorkOrderDetailComponent implements OnInit {
   showActualForm = false;
   showRescheduleForm = false;
   showCancelForm = false;
+  showApproveModal = false;
+  cancelStage: 'edit' | 'confirm' = 'edit';
+  busy: Busy = null;
   actualForm: FormGroup;
   rescheduleForm: FormGroup;
   cancelForm: FormGroup;
@@ -339,6 +324,7 @@ export class WorkOrderDetailComponent implements OnInit {
     private router: Router,
     private workOrderService: WorkOrderService,
     public auth: AuthService,
+    public i18n: I18nService,
     private fb: FormBuilder,
     private toastr: ToastrService,
     private cdr: ChangeDetectorRef
@@ -368,6 +354,33 @@ export class WorkOrderDetailComponent implements OnInit {
     }
   }
 
+  get reasonChips() {
+    const keys = this.i18n.lang === 'th' ? REASON_KEYS_TH : REASON_KEYS_EN;
+    const labels = this.i18n.lang === 'th' ? REASON_LABELS_TH : REASON_LABELS_EN;
+    return keys.map((value, i) => ({ value, label: labels[i] }));
+  }
+
+  get approveConfirmLabel(): string {
+    if (this.busy === 'approve') return this.i18n.t['approving'];
+    if (this.busy === 'approve-done') return this.i18n.t['approvedDone'];
+    return this.i18n.t['yesConfirm'];
+  }
+  get confirmCancelLabel(): string {
+    if (this.busy === 'cancel') return this.i18n.t['cancelling'];
+    if (this.busy === 'cancel-done') return this.i18n.t['cancelledDone'];
+    return this.i18n.t['yesConfirm'];
+  }
+  get confirmPostponeLabel(): string {
+    if (this.busy === 'postpone') return this.i18n.t['postponing'];
+    if (this.busy === 'postpone-done') return this.i18n.t['postponedDone'];
+    return this.i18n.t['confirmPostpone'];
+  }
+  get saveActualLabel(): string {
+    if (this.busy === 'actual') return this.i18n.t['saving'];
+    if (this.busy === 'actual-done') return this.i18n.t['saved'];
+    return this.i18n.t['save'];
+  }
+
   loadOrder(id: string) {
     this.workOrderService.getOrderById(id).subscribe({
       next: (order) => {
@@ -375,11 +388,30 @@ export class WorkOrderDetailComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error('ไม่สามารถโหลดข้อมูลงานได้');
+        this.toastr.error(this.i18n.lang === 'th' ? 'ไม่สามารถโหลดข้อมูลงานได้' : 'Failed to load job');
         console.error(err);
         this.cdr.detectChanges();
       }
     });
+  }
+
+  statusClass(status: string): string {
+    switch (status) {
+      case 'draft':
+      case 'pending_approval':
+      case 'rescheduled':
+        return 'st-warn';
+      case 'approved':
+        return 'st-info';
+      case 'in_progress':
+        return 'st-success';
+      case 'overdue':
+        return 'st-danger';
+      case 'cancelled':
+        return 'st-muted';
+      default:
+        return 'st-neutral';
+    }
   }
 
   get canUpdateActual(): boolean {
@@ -391,7 +423,7 @@ export class WorkOrderDetailComponent implements OnInit {
   get canReschedule(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
-    return isOwner && ['approved', 'pending_approval'].includes(this.order.status);
+    return (isOwner || this.auth.isAdmin) && ['approved', 'pending_approval'].includes(this.order.status);
   }
 
   get canCancel(): boolean {
@@ -406,104 +438,139 @@ export class WorkOrderDetailComponent implements OnInit {
     return this.auth.isSupervisor && this.order?.status === 'pending_approval';
   }
 
-  getStatusText(status: string): string {
-    const map: any = {
-      'draft': '📝 ร่าง',
-      'pending_approval': '⏳ รออนุมัติ',
-      'approved': '✅ อนุมัติแล้ว',
-      'in_progress': '🔧 กำลังดำเนินการ',
-      'completed': '✅ เสร็จสิ้น',
-      'overdue': '⚠️ ค้างเกินกำหนด',
-      'cancelled': ' ยกเลิกแล้ว',
-      'rescheduled': '🔄 เลื่อนแล้ว'
-    };
-    return map[status] || status;
-  }
-
   setQuickReason(reason: string): void {
     this.cancelForm.patchValue({ cancelReason: reason });
   }
 
+  openCancel() {
+    this.cancelStage = 'edit';
+    this.showCancelForm = true;
+  }
+
+  closeCancelModal() {
+    this.showCancelForm = false;
+    this.cancelStage = 'edit';
+  }
+
+  goConfirmCancelStage() {
+    const reason = (this.cancelForm.value.cancelReason || '').trim();
+    if (!reason) {
+      this.toastr.warning(this.i18n.t['toastNeedReason']);
+      this.cancelForm.markAllAsTouched();
+      return;
+    }
+    this.cancelStage = 'confirm';
+  }
+
+  backToEditCancel() {
+    this.cancelStage = 'edit';
+  }
+
   submitActual() {
     if (this.actualForm.invalid) {
-      this.toastr.warning('กรุณากรอกข้อมูลให้ครบถ้วน');
+      this.toastr.warning(this.i18n.lang === 'th' ? 'กรุณากรอกข้อมูลให้ครบถ้วน' : 'Please fill in all required fields');
       this.actualForm.markAllAsTouched();
       return;
     }
-    
+
+    this.busy = 'actual';
     this.workOrderService.updateActual(this.order!._id, this.actualForm.value).subscribe({
       next: (res) => {
-        this.toastr.success('บันทึกงานจริงสำเร็จ');
         this.order = res;
-        this.showActualForm = false;
-        this.actualForm.reset();
+        this.busy = 'actual-done';
+        this.toastr.success(this.i18n.t['toastStatus']);
         this.cdr.detectChanges();
+        setTimeout(() => {
+          this.busy = null;
+          this.showActualForm = false;
+          this.actualForm.reset();
+          this.cdr.detectChanges();
+        }, 700);
       },
-      error: (err) => this.toastr.error(err.error?.message || 'เกิดข้อผิดพลาด')
+      error: (err) => {
+        this.busy = null;
+        this.toastr.error(err.error?.message || 'Error');
+      }
     });
   }
 
   submitReschedule() {
     if (this.rescheduleForm.invalid) {
-      this.toastr.warning('กรุณากรอกข้อมูลให้ครบถ้วน');
+      this.toastr.warning(this.i18n.lang === 'th' ? 'กรุณากรอกข้อมูลให้ครบถ้วน' : 'Please fill in all required fields');
       this.rescheduleForm.markAllAsTouched();
       return;
     }
-    
+
+    this.busy = 'postpone';
     this.workOrderService.reschedule(
-      this.order!._id, 
-      this.rescheduleForm.value.newDate, 
+      this.order!._id,
+      this.rescheduleForm.value.newDate,
       this.rescheduleForm.value.reason
     ).subscribe({
       next: (res) => {
-        this.toastr.success('เลื่อนงานสำเร็จ รออนุมัติ');
         this.order = res;
-        this.showRescheduleForm = false;
-        this.rescheduleForm.reset();
+        this.busy = 'postpone-done';
+        this.toastr.success(this.i18n.t['toastPostponed']);
         this.cdr.detectChanges();
-      },
-      error: (err) => this.toastr.error(err.error?.message || 'เกิดข้อผิดพลาด')
-    });
-  }
-
-  submitCancel() {
-    if (this.cancelForm.invalid) {
-      this.toastr.warning('กรุณาระบุเหตุผลการยกเลิก');
-      this.cancelForm.markAllAsTouched();
-      return;
-    }
-    
-    const confirmMsg = `ยืนยันการยกเลิกงาน ${this.order?.srNumber}?\n\nเหตุผล: ${this.cancelForm.value.cancelReason}\n\n⚠️ การดำเนินการนี้ไม่สามารถย้อนกลับได้`;
-    if (!confirm(confirmMsg)) return;
-    
-    this.workOrderService.cancel(
-      this.order!._id, 
-      this.cancelForm.value.cancelReason
-    ).subscribe({
-      next: (res: any) => {
-        this.toastr.success('ยกเลิกงานสำเร็จ');
-        this.order = res.order;
-        this.showCancelForm = false;
-        this.cancelForm.reset();
-        this.cdr.detectChanges();
+        setTimeout(() => {
+          this.busy = null;
+          this.showRescheduleForm = false;
+          this.rescheduleForm.reset();
+          this.cdr.detectChanges();
+        }, 700);
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'เกิดข้อผิดพลาด');
+        this.busy = null;
+        this.toastr.error(err.error?.message || 'Error');
       }
     });
   }
 
-  approve() {
-    if (confirm('ยืนยันการอนุมัติแผนงานนี้?')) {
-      this.workOrderService.approve(this.order!._id).subscribe({
-        next: (res) => {
-          this.toastr.success('อนุมัติสำเร็จ');
-          this.order = res;
+  confirmCancel() {
+    this.busy = 'cancel';
+    this.workOrderService.cancel(
+      this.order!._id,
+      this.cancelForm.value.cancelReason
+    ).subscribe({
+      next: (res: any) => {
+        this.order = res.order;
+        this.busy = 'cancel-done';
+        this.toastr.success(this.i18n.t['toastCancelled']);
+        this.cdr.detectChanges();
+        setTimeout(() => {
+          this.busy = null;
+          this.showCancelForm = false;
+          this.cancelStage = 'edit';
+          this.cancelForm.reset();
           this.cdr.detectChanges();
-        },
-        error: (err) => this.toastr.error(err.error?.message || 'เกิดข้อผิดพลาด')
-      });
-    }
+        }, 700);
+      },
+      error: (err) => {
+        this.busy = null;
+        this.toastr.error(err.error?.message || 'Error');
+      }
+    });
+  }
+
+  confirmApprove() {
+    this.busy = 'approve';
+    this.workOrderService.approve(this.order!._id).subscribe({
+      next: (res) => {
+        this.order = res;
+        this.busy = 'approve-done';
+        this.toastr.success(this.i18n.t['toastApproved']);
+        this.cdr.detectChanges();
+        setTimeout(() => {
+          this.busy = null;
+          this.showApproveModal = false;
+          this.cdr.detectChanges();
+        }, 700);
+      },
+      error: (err) => {
+        this.busy = null;
+        this.toastr.error(err.error?.message || 'Error');
+      }
+    });
   }
 
   back() {

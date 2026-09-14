@@ -4,6 +4,14 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
+export interface ProfileUpdatePayload {
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  currentPassword?: string;
+}
+
 export interface User {
   _id: string;
   username: string;
@@ -11,6 +19,7 @@ export interface User {
   role: 'technician' | 'supervisor' | 'admin';
   email?: string;
   phone?: string;
+  active?: boolean;
   token?: string;
 }
 
@@ -39,6 +48,24 @@ export class AuthService {
   logout(): void {
     localStorage.removeItem('currentUser');
     this.currentUserSubject.next(null);
+  }
+
+  getMe(): Observable<User> {
+    const headers = { Authorization: `Bearer ${this.token}` };
+    return this.http.get<User>(`${environment.apiUrl}/auth/me`, { headers });
+  }
+
+  updateProfile(payload: ProfileUpdatePayload): Observable<User> {
+    const headers = { Authorization: `Bearer ${this.token}` };
+    return this.http.patch<User>(`${environment.apiUrl}/auth/me`, payload, { headers }).pipe(
+      tap(updated => {
+        const current = this.currentUserSubject.value;
+        if (!current) return;
+        const merged: User = { ...current, fullName: updated.fullName, email: updated.email, phone: updated.phone };
+        localStorage.setItem('currentUser', JSON.stringify(merged));
+        this.currentUserSubject.next(merged);
+      })
+    );
   }
 
   get currentUser(): User | null {

@@ -1,105 +1,105 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { WorkOrderService, WorkOrder } from '../../services/work-order.service';
 import { AuthService } from '../../services/auth.service';
+import { I18nService } from '../../services/i18n.service';
 
 @Component({
   selector: 'app-cancelled-orders',
   standalone: false,
   template: `
-    <div class="container">
-      <div class="header">
-        <h2> รายงานงานที่ยกเลิก</h2>
-        <button (click)="back()" class="btn-back">← กลับ</button>
-      </div>
-      
-      <div class="filters">
-        <div class="filter-group">
-          <label>เดือน:</label>
-          <select [(ngModel)]="selectedMonth" (change)="loadData()">
-            <option *ngFor="let m of months" [value]="m.value">{{ m.label }}</option>
-          </select>
+    <div class="page">
+      <div class="card">
+        <div class="card-head">
+          <div class="head-title">{{ i18n.t['cancelReport'] }}</div>
+          <button (click)="back()" class="btn-ghost">← {{ i18n.t['back'] }}</button>
         </div>
-        <div class="filter-group">
-          <label>ปี:</label>
-          <select [(ngModel)]="selectedYear" (change)="loadData()">
-            <option *ngFor="let y of years" [value]="y">{{ y }}</option>
-          </select>
+
+        <div class="filter-bar">
+          <span class="muted">{{ i18n.t['month'] }}</span>
+          <app-select class="month-select" [ngModel]="selectedMonth" (ngModelChange)="selectedMonth = $event; loadData()" [options]="months"></app-select>
+          <span class="muted">{{ i18n.t['year'] }}</span>
+          <app-select class="year-select" [ngModel]="selectedYear" (ngModelChange)="selectedYear = $event; loadData()" [options]="yearOptions"></app-select>
         </div>
-      </div>
 
-      <div *ngIf="loading" class="loading">
-        <div class="spinner"></div>
-        กำลังโหลด...
-      </div>
-      
-      <div *ngIf="!loading && orders.length === 0" class="empty">
-        📭 ไม่พบงานที่ยกเลิกในเดือนที่เลือก
-      </div>
+        <div class="search-bar" *ngIf="!loading">
+          <div class="search-box">
+            <span>⌕</span>
+            <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']">
+          </div>
+          <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredOrders.length }} / {{ orders.length }}</span>
+        </div>
 
-      <div *ngIf="!loading && orders.length > 0">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>SR Number</th>
-              <th>ลูกค้า</th>
-              <th>ประเภท</th>
-              <th>ช่าง</th>
-              <th>วันที่วางแผน</th>
-              <th>ผู้ยกเลิก</th>
-              <th>เวลายกเลิก</th>
-              <th>เหตุผล</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let order of orders">
-              <td><strong>{{ order.srNumber }}</strong></td>
-              <td>{{ order.customerName }}</td>
-              <td><span class="badge">{{ order.workType }}</span></td>
-              <td>{{ order.technician?.fullName }}</td>
-              <td>{{ order.plannedDate | date:'dd/MM/yyyy' }}</td>
-              <td>{{ order.cancelledBy?.fullName }}</td>
-              <td>{{ order.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</td>
-              <td class="reason-cell">{{ order.cancelReason }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div *ngIf="loading" class="empty-state">{{ i18n.t['loading'] }}</div>
+        <div *ngIf="!loading && orders.length === 0" class="empty-state">{{ i18n.t['noResults'] }}</div>
 
-        <div class="summary">
-          <strong>📊 สรุป:</strong> พบงานที่ยกเลิกทั้งหมด {{ orders.length }} รายการ
+        <div *ngIf="!loading && orders.length > 0" class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>{{ i18n.t['colSr'] }}</th>
+                <th>{{ i18n.t['colHospital'] }}</th>
+                <th>{{ i18n.t['colType'] }}</th>
+                <th>{{ i18n.t['colTech'] }}</th>
+                <th>{{ i18n.t['colPlan'] }}</th>
+                <th>{{ i18n.t['colBy'] }}</th>
+                <th>{{ i18n.t['colAt'] }}</th>
+                <th>{{ i18n.t['colReason'] }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let order of filteredOrders">
+                <td class="mono">{{ order.srNumber }}</td>
+                <td>{{ order.customerName }}</td>
+                <td><span class="badge">{{ i18n.typeLabel(order.workType) }}</span></td>
+                <td>{{ order.technician?.fullName }}</td>
+                <td class="mono">{{ order.plannedDate | date:'dd/MM/yyyy' }}</td>
+                <td>{{ order.cancelledBy?.fullName }}</td>
+                <td class="mono">{{ order.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td class="reason-cell">{{ order.cancelReason }}</td>
+              </tr>
+              <tr *ngIf="filteredOrders.length === 0">
+                <td colspan="8" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    .container { max-width: 1200px; margin: 20px auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0; }
-    .header h2 { margin: 0; color: #1976d2; }
-    .btn-back { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
-    .btn-back:hover { background: #f5f5f5; }
-    
-    .filters { display: flex; gap: 20px; margin-bottom: 25px; flex-wrap: wrap; padding: 15px; background: #f9f9f9; border-radius: 6px; }
-    .filter-group { display: flex; align-items: center; gap: 10px; }
-    .filter-group label { font-weight: bold; color: #555; }
-    .filter-group select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-    
-    .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .data-table th, .data-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-    .data-table th { background: #1976d2; color: white; font-weight: bold; }
-    .data-table tr:hover { background: #f5f5f5; }
-    .data-table tr:last-child td { border-bottom: none; }
-    .reason-cell { max-width: 300px; font-style: italic; color: #666; font-size: 13px; }
-    .badge { display: inline-block; padding: 4px 8px; background: #e3f2fd; color: #1976d2; border-radius: 4px; font-size: 12px; font-weight: bold; }
-    
-    .summary { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px; text-align: right; font-size: 15px; }
-    .loading, .empty { text-align: center; padding: 60px 20px; color: #666; font-size: 16px; }
-    .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #1976d2; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    
+    .page { padding: 24px 18px 44px; max-width: 1200px; margin: 0 auto; }
+    .card { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line2); }
+    .head-title { font-size: 18px; font-weight: 700; }
+    .btn-ghost { border-radius: var(--radius); height: 40px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    .filter-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--alt); border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
+    .muted { font-size: 13px; color: var(--sub); }
+    .filter-bar app-select.month-select { flex: 0 0 180px; }
+    .filter-bar app-select.year-select { flex: 0 0 110px; }
+    .spacer { flex: 1; }
+
+    .search-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
+    .search-box { border-radius: var(--radius); flex: 1 1 260px; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border: 1px solid var(--line); background: var(--field); }
+    .search-box span { color: var(--sub); font-size: 13px; }
+    .search-box input { border: none; background: transparent; outline: none; font-size: 13.5px; width: 100%; color: var(--ink); }
+    .count { font-size: 12.5px; color: var(--sub); }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--sub); font-size: 15px; }
+    .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
+
+    .table-scroll { overflow-x: auto; }
+    .data-table { width: 100%; min-width: 900px; border-collapse: collapse; }
+    .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
+    .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line2); font-size: 13px; }
+    .reason-cell { max-width: 260px; color: var(--sub); font-size: 12.5px; }
+    .badge { display: inline-block; padding: 2px 8px; background: var(--info-bg); color: var(--info-text); border: 1px solid var(--info-line); border-radius: var(--radius); font-size: 11.5px; font-weight: 600; }
+
     @media (max-width: 768px) {
-      .data-table { font-size: 12px; }
-      .data-table th, .data-table td { padding: 8px 6px; }
       .reason-cell { max-width: 150px; }
-      .filters { flex-direction: column; }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-bar app-select.month-select, .filter-bar app-select.year-select { flex: 1 1 auto; }
     }
   `]
 })
@@ -108,22 +108,41 @@ export class CancelledOrdersComponent implements OnInit {
   loading = false;
   selectedMonth: number = new Date().getMonth() + 1;
   selectedYear: number = new Date().getFullYear();
-  
-  months = [
-    { value: 1, label: 'มกราคม' }, { value: 2, label: 'กุมภาพันธ์' },
-    { value: 3, label: 'มีนาคม' }, { value: 4, label: 'เมษายน' },
-    { value: 5, label: 'พฤษภาคม' }, { value: 6, label: 'มิถุนายน' },
-    { value: 7, label: 'กรกฎาคม' }, { value: 8, label: 'สิงหาคม' },
-    { value: 9, label: 'กันยายน' }, { value: 10, label: 'ตุลาคม' },
-    { value: 11, label: 'พฤศจิกายน' }, { value: 12, label: 'ธันวาคม' }
-  ];
+  searchText = '';
+
   years = Array.from({ length: 41 }, (_, i) => new Date().getFullYear() - 20 + i);
+
+  get months() {
+    const locale = this.i18n.lang === 'th' ? 'th-TH' : 'en-US';
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: i + 1,
+      label: new Date(2000, i, 1).toLocaleDateString(locale, { month: 'long' })
+    }));
+  }
+
+  get yearOptions() {
+    return this.years.map(y => ({ value: y, label: String(y) }));
+  }
 
   constructor(
     private workOrderService: WorkOrderService,
     public auth: AuthService,
+    public i18n: I18nService,
     private cdr: ChangeDetectorRef
   ) {}
+
+  get filteredOrders(): WorkOrder[] {
+    const q = this.searchText.trim().toLowerCase();
+    if (!q) return this.orders;
+    return this.orders.filter(o =>
+      (o.srNumber || '').toLowerCase().includes(q) ||
+      (o.customerName || '').toLowerCase().includes(q) ||
+      (o.technician?.fullName || '').toLowerCase().includes(q) ||
+      (o.cancelledBy?.fullName || '').toLowerCase().includes(q) ||
+      (o.cancelReason || '').toLowerCase().includes(q) ||
+      this.i18n.typeLabel(o.workType).toLowerCase().includes(q)
+    );
+  }
 
   ngOnInit() {
     this.loadData();
