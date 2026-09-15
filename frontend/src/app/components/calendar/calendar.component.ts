@@ -53,7 +53,7 @@ import { Router } from '@angular/router';
         <div class="legend">
           <span class="legend-item"><span class="dot" style="background:#d98b1e"></span>{{ i18n.statusLabel('pending_approval') }}</span>
           <span class="legend-item"><span class="dot" style="background:#2563eb"></span>{{ i18n.statusLabel('approved') }}</span>
-          <span class="legend-item"><span class="dot" style="background:#8d949c"></span>{{ i18n.statusLabel('completed') }}</span>
+          <span class="legend-item"><span class="dot" style="background:#0d8f72"></span>{{ i18n.statusLabel('completed') }}</span>
           <span class="legend-item"><span class="dot" style="background:#c2410c"></span>{{ i18n.statusLabel('overdue') }}</span>
           <span class="legend-item"><span class="dot" style="background:#8d949c;opacity:.55"></span>{{ i18n.statusLabel('cancelled') }}</span>
         </div>
@@ -66,28 +66,39 @@ import { Router } from '@angular/router';
           <button [class.on]="!showAll" (click)="setScope(false)">{{ i18n.t['scopeMine'] }}</button>
           <button [class.on]="showAll" (click)="setScope(true)">{{ i18n.t['scopeAll'] }}</button>
         </div>
-        <div class="scope-note" *ngIf="!auth.isSupervisor">{{ i18n.t['scopeOwnOnly'] }}</div>
-
         <button class="add-btn" (click)="addNewWork()">+ {{ i18n.t['navAdd'] }}</button>
-      </div>
-
-      <div *ngIf="auth.isSupervisor && overdueOrders.length > 0" class="overdue-alert">
-        <div class="overdue-title">⚠ {{ i18n.t['overdueAlert'] }} ({{ overdueOrders.length }})</div>
-        <div class="overdue-item" *ngFor="let o of overdueOrders">
-          <span class="mono">{{ o.srNumber }}</span>
-          <span class="overdue-customer">{{ o.customerName }}</span>
-          <span class="days">{{ o.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}</span>
-          <button (click)="viewOrder(o._id)">{{ i18n.t['viewDetail'] }}</button>
-        </div>
       </div>
 
       <div class="body">
         <aside class="sidebar" *ngIf="auth.isSupervisor && showAll">
-          <div class="sidebar-head">
-            <span class="mono">{{ i18n.t['team'] }}</span>
-            <button class="link-btn" (click)="clearFilters()">{{ i18n.t['clearFilter'] }}</button>
+          <button type="button" class="sidebar-head collapsible" *ngIf="overdueOrders.length > 0" (click)="overdueCollapsed = !overdueCollapsed">
+            <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
+            <span class="collapsible-right">
+              <span class="count-badge tone-danger-badge">{{ overdueOrders.length }}</span>
+              <span class="collapse-caret" [class.collapsed]="overdueCollapsed">▾</span>
+            </span>
+          </button>
+          <div class="overdue-list" *ngIf="overdueOrders.length > 0 && !overdueCollapsed">
+            <div *ngFor="let o of overdueOrders" class="queue-item overdue-item" (click)="viewOrder(o._id)">
+              <div class="queue-row">
+                <span class="mono">{{ o.srNumber }}</span>
+                <span class="mono tone-danger">{{ o.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}</span>
+              </div>
+              <div class="queue-customer">{{ o.customerName }}</div>
+            </div>
           </div>
-          <div class="tech-list">
+
+          <button type="button" class="sidebar-head collapsible" (click)="teamCollapsed = !teamCollapsed">
+            <span class="mono">{{ i18n.t['team'] }}</span>
+            <span class="collapsible-right">
+              <span class="count-badge">{{ technicians.length }}</span>
+              <span class="collapse-caret" [class.collapsed]="teamCollapsed">▾</span>
+            </span>
+          </button>
+          <div class="tech-list" *ngIf="!teamCollapsed">
+            <div class="list-toolbar">
+              <button class="link-btn" (click)="clearFilters()">{{ i18n.t['clearFilter'] }}</button>
+            </div>
             <button *ngFor="let t of technicians" class="tech-row" [class.on]="filterTech === t._id" (click)="toggleTechFilter(t._id)">
               <span class="tech-avatar" [style.background]="filterTech === t._id ? null : avatarColor(t.fullName)">{{ initials(t.fullName) }}</span>
               <span class="tech-meta">
@@ -99,18 +110,60 @@ import { Router } from '@angular/router';
             <div *ngIf="technicians.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
           </div>
 
-          <div class="queue-head">
+          <button type="button" class="sidebar-head collapsible" (click)="queueCollapsed = !queueCollapsed">
             <span class="mono">{{ i18n.t['queueTitle'] }}</span>
-            <span class="queue-count mono">{{ pendingApproval.length }}</span>
-          </div>
-          <div class="queue-list">
+            <span class="collapsible-right">
+              <span class="count-badge tone-warn-badge">{{ pendingApproval.length }}</span>
+              <span class="collapse-caret" [class.collapsed]="queueCollapsed">▾</span>
+            </span>
+          </button>
+          <div class="queue-list" *ngIf="!queueCollapsed">
             <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
               <div class="queue-row">
                 <span class="mono">{{ o.srNumber }}</span>
-                <span class="mono">{{ o.plannedDate | date:'d MMM' }}</span>
+                <span class="mono">{{ o.plannedDate | localDate:'d MMM' }}</span>
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
               <div class="queue-sub">{{ i18n.typeLabel(o.workType) }} · {{ o.technician?.fullName }}</div>
+              <div class="queue-window mono">{{ timeWindow(o) }}</div>
+            </div>
+            <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
+          </div>
+        </aside>
+
+        <aside class="sidebar" *ngIf="!(auth.isSupervisor && showAll)">
+          <button type="button" class="sidebar-head collapsible" *ngIf="myOverdueOrders.length > 0" (click)="myOverdueCollapsed = !myOverdueCollapsed">
+            <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
+            <span class="collapsible-right">
+              <span class="count-badge tone-danger-badge">{{ myOverdueOrders.length }}</span>
+              <span class="collapse-caret" [class.collapsed]="myOverdueCollapsed">▾</span>
+            </span>
+          </button>
+          <div class="overdue-list" *ngIf="myOverdueOrders.length > 0 && !myOverdueCollapsed">
+            <div *ngFor="let o of myOverdueOrders" class="queue-item overdue-item" (click)="viewOrder(o._id)">
+              <div class="queue-row">
+                <span class="mono">{{ o.srNumber }}</span>
+                <span class="mono tone-danger">{{ o.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}</span>
+              </div>
+              <div class="queue-customer">{{ o.customerName }}</div>
+            </div>
+          </div>
+
+          <button type="button" class="sidebar-head collapsible" (click)="myPendingCollapsed = !myPendingCollapsed">
+            <span class="mono">{{ i18n.t['myPendingTitle'] }}</span>
+            <span class="collapsible-right">
+              <span class="count-badge tone-warn-badge">{{ pendingApproval.length }}</span>
+              <span class="collapse-caret" [class.collapsed]="myPendingCollapsed">▾</span>
+            </span>
+          </button>
+          <div class="queue-list" *ngIf="!myPendingCollapsed">
+            <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
+              <div class="queue-row">
+                <span class="mono">{{ o.srNumber }}</span>
+                <span class="mono">{{ o.plannedDate | localDate:'d MMM' }}</span>
+              </div>
+              <div class="queue-customer">{{ o.customerName }}</div>
+              <div class="queue-sub">{{ i18n.typeLabel(o.workType) }}</div>
               <div class="queue-window mono">{{ timeWindow(o) }}</div>
             </div>
             <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
@@ -228,39 +281,41 @@ import { Router } from '@angular/router';
     }
     .today-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-    .stats { display: flex; align-items: center; gap: 13px; font-size: 13px; flex-wrap: wrap; }
+    .stats { display: flex; align-items: center; gap: 5px; font-size: 13px; flex-wrap: wrap; }
     .tone-info { color: var(--info-text); }
     .tone-warn { color: var(--warn-text); }
     .tone-danger { color: var(--danger-text); }
 
-    .legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--sub); }
+    .legend { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 12px; color: var(--sub); }
     .legend-item { display: flex; align-items: center; gap: 6px; }
     .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 
     .spacer { flex: 1; min-width: 8px; }
-    .scope-note { font-size: 12px; color: var(--sub); }
     .add-btn {
       border-radius: var(--radius); height: 36px; padding: 0 16px; border: 1px solid var(--accent);
       background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
     }
     .add-btn:hover { background: var(--accent-hover); }
 
-    .overdue-alert { background: var(--danger-bg); border-bottom: 1px solid var(--danger-line); padding: 10px 16px; flex: none; }
-    .overdue-title { font-size: 13px; font-weight: 700; color: var(--danger-text); margin-bottom: 6px; }
-    .overdue-item { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 4px 0; flex-wrap: wrap; }
-    .overdue-customer { flex: 1; min-width: 120px; }
-    .days { color: var(--danger-text); font-weight: 700; }
-    .overdue-item button {
-      border-radius: 8px; height: 26px; padding: 0 10px; border: 1px solid var(--danger-line);
-      background: var(--surface); color: var(--danger-text); font-size: 11.5px; cursor: pointer;
-    }
-
     .body { display: flex; flex: 1; min-height: 0; }
 
     .sidebar { width: 280px; flex: none; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
     .sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; flex: none; font-size: 10px; letter-spacing: 0.1em; color: var(--sub); }
+    .sidebar-head .tone-danger { letter-spacing: normal; font-size: 12px; font-weight: 700; }
+    .sidebar-head.collapsible { width: 100%; border: none; border-top: 1px solid var(--line2); background: transparent; font-family: inherit; cursor: pointer; }
+    .sidebar-head.collapsible:first-child { border-top: none; }
+    .sidebar-head.collapsible:hover .mono, .sidebar-head.collapsible:hover .tone-danger { text-decoration: underline; }
+    .collapsible-right { display: flex; align-items: center; gap: 8px; }
+    .collapse-caret { font-size: 12px; color: var(--sub); transition: transform 0.15s ease; }
+    .collapse-caret.collapsed { transform: rotate(-90deg); }
     .link-btn { border: none; background: transparent; font-size: 12px; color: var(--accent); cursor: pointer; padding: 0; }
-    .tech-list { flex: 1 1 0; min-height: 0; max-height: 34vh; overflow-y: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+    .count-badge { border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--sub); background: var(--alt); border: 1px solid var(--line2); padding: 1px 8px; }
+    .count-badge.tone-danger-badge { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-line); }
+    .count-badge.tone-warn-badge { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-line); }
+    .overdue-list { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .queue-item.overdue-item { border-left-color: #c2410c; padding: 10px 12px; gap: 4px; }
+    .tech-list { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+    .list-toolbar { display: flex; justify-content: flex-end; padding: 10px 0 2px; }
     .tech-row {
       border-radius: var(--radius); display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
       padding: 7px 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer;
@@ -273,10 +328,7 @@ import { Router } from '@angular/router';
     .tech-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
     .tech-role { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tech-hours { font-size: 11px; color: var(--sub); }
-
-    .queue-head { padding: 13px 16px 12px; border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line2); display: flex; align-items: center; gap: 9px; flex: none; font-size: 10px; letter-spacing: 0.1em; color: var(--sub); }
-    .queue-count { border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); padding: 1px 8px; }
-    .queue-list { flex: 1.6 1 0; min-height: 0; overflow-y: auto; padding: 12px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .queue-list { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 12px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
     .queue-item { border-radius: var(--radius); border: 1px solid var(--line); border-left: 4px solid #d98b1e; background: var(--surface); padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
     .queue-item:hover { border-color: var(--accent); }
     .queue-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--sub); }
@@ -356,6 +408,11 @@ export class CalendarComponent implements OnInit {
   overdueOrders: WorkOrder[] = [];
   technicians: User[] = [];
   showAll = false;
+  overdueCollapsed = false;
+  teamCollapsed = false;
+  queueCollapsed = false;
+  myOverdueCollapsed = false;
+  myPendingCollapsed = false;
   filterTech: string | null = null;
   hours = Array.from({ length: 24 }, (_, i) => i);
   showMonthPicker = false;
@@ -446,6 +503,15 @@ export class CalendarComponent implements OnInit {
     return this.workOrders
       .filter(o => o.status === 'pending_approval')
       .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime());
+  }
+
+  // In "my jobs" scope, this.workOrders already only holds the current
+  // user's own orders (loaded via getMyOrders), so filtering it directly
+  // gives "my overdue jobs" without needing the supervisor-only endpoint.
+  get myOverdueOrders(): WorkOrder[] {
+    return this.workOrders
+      .filter(o => o.status === 'overdue')
+      .sort((a, b) => (b.overdueDays || 0) - (a.overdueDays || 0));
   }
 
   get stats() {
@@ -712,6 +778,7 @@ export class CalendarComponent implements OnInit {
       case 'approved':
         return 'st-info';
       case 'in_progress':
+      case 'completed':
         return 'st-success';
       case 'overdue':
         return 'st-danger';

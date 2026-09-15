@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { DatePipe } from '@angular/common';
 import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { ToastrModule } from 'ngx-toastr';
@@ -14,12 +15,14 @@ import { CalendarComponent } from './components/calendar/calendar.component';
 import { WorkOrderFormComponent } from './components/work-order-form/work-order-form.component';
 import { WorkOrderDetailComponent } from './components/work-order-detail/work-order-detail.component';
 import { CancelledOrdersComponent } from './components/cancelled-orders/cancelled-orders.component';
+import { TechDashboardComponent } from './components/tech-dashboard/tech-dashboard.component';
 import { HospitalSettingsComponent } from './components/hospital-settings/hospital-settings.component';
 import { UserSettingsComponent } from './components/user-settings/user-settings.component';
 import { ProfileComponent } from './components/profile/profile.component';
 import { DatePickerComponent } from './components/date-picker/date-picker.component';
 import { TimePickerComponent } from './components/time-picker/time-picker.component';
 import { SelectComponent } from './components/select/select.component';
+import { LocalDatePipe } from './pipes/local-date.pipe';
 
 @NgModule({
   declarations: [
@@ -29,12 +32,14 @@ import { SelectComponent } from './components/select/select.component';
     WorkOrderFormComponent,
     WorkOrderDetailComponent,
     CancelledOrdersComponent,
+    TechDashboardComponent,
     HospitalSettingsComponent,
     UserSettingsComponent,
     ProfileComponent,
     DatePickerComponent,
     TimePickerComponent,
-    SelectComponent
+    SelectComponent,
+    LocalDatePipe
   ],
   imports: [
     BrowserModule,
@@ -55,7 +60,8 @@ import { SelectComponent } from './components/select/select.component';
     })
   ],
   providers: [
-    { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true }
+    { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },
+    DatePipe
   ],
   bootstrap: [AppComponent]
 })

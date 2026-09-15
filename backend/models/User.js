@@ -34,6 +34,10 @@ const User = sequelize.define('User', {
   active: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
+  },
+  lineUserId: {
+    type: DataTypes.STRING,
+    unique: true
   }
 }, {
   tableName: 'users',

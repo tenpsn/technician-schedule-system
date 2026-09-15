@@ -5,26 +5,40 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const logger = require('../config/logger');
 
-// Run every day at 8:00 AM
-cron.schedule('0 8 * * *', async () => {
+// A work order's deadline is its planned end time on its planned date; jobs
+// left without a specific end time are treated as due by the end of that day.
+const deadlineOf = (order) => {
+  const deadline = new Date(order.plannedDate);
+  if (order.plannedEndTime) {
+    const [hours, minutes] = order.plannedEndTime.split(':').map(Number);
+    deadline.setHours(hours, minutes, 0, 0);
+  } else {
+    deadline.setHours(23, 59, 59, 999);
+  }
+  return deadline;
+};
+
+// Run every 30 minutes — matches the web form's time picker, which only
+// offers times on the same 30-minute grid (see time-picker.component.ts).
+cron.schedule('*/30 * * * *', async () => {
   logger.info('🔄 Running overdue check...');
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const now = new Date();
 
   try {
-    const overdueOrders = await WorkOrder.findAll({
+    const candidates = await WorkOrder.findAll({
       where: {
-        status: { [Op.in]: ['approved', 'in_progress', 'pending_approval'] },
-        plannedDate: { [Op.lt]: today }
+        status: { [Op.in]: ['approved', 'in_progress', 'pending_approval'] }
       },
       include: [{ model: User, as: 'technician', attributes: ['id', 'fullName', 'email'] }]
     });
 
+    const overdueOrders = candidates.filter((order) => deadlineOf(order) < now);
+
     logger.info(`Found ${overdueOrders.length} overdue orders`);
 
     for (const order of overdueOrders) {
-      const days = Math.floor((today - order.plannedDate) / (1000 * 60 * 60 * 24));
+      const days = Math.floor((now - deadlineOf(order)) / (1000 * 60 * 60 * 24));
 
       // Only update if not already marked as overdue or if days increased
       if (!order.isOverdue || order.overdueDays !== days) {

@@ -23,6 +23,7 @@ const NOTIF_POLL_MS = 30000;
           <a routerLink="/calendar" routerLinkActive="active">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</a>
           <a routerLink="/work-orders/new" routerLinkActive="active">{{ i18n.t['navAdd'] }}</a>
           <a *ngIf="auth.isSupervisor" routerLink="/cancelled-orders" routerLinkActive="active">{{ i18n.t['navCancelled'] }}</a>
+          <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">{{ i18n.t['navDashboard'] }}</a>
           <a *ngIf="auth.isSupervisor" routerLink="/settings/hospitals" routerLinkActive="active">{{ i18n.t['navHospitals'] }}</a>
           <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">{{ i18n.t['navUsers'] }}</a>
         </nav>
@@ -75,7 +76,7 @@ const NOTIF_POLL_MS = 30000;
               <div class="notif-item" *ngFor="let n of notifications" [class.unread]="!n.isRead" (click)="openNotification(n)">
                 <div class="notif-title">{{ n.title }}</div>
                 <div class="notif-message">{{ n.message }}</div>
-                <div class="notif-time mono">{{ n.createdAt | date:'dd/MM/yyyy HH:mm' }}</div>
+                <div class="notif-time mono">{{ n.createdAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
               </div>
               <div class="notif-empty" *ngIf="notifications.length === 0">{{ i18n.t['noNotifications'] }}</div>
             </div>
@@ -96,6 +97,9 @@ const NOTIF_POLL_MS = 30000;
         </a>
         <a *ngIf="auth.isSupervisor" routerLink="/cancelled-orders" routerLinkActive="active">
           <span class="glyph">✕</span><span class="label">{{ i18n.t['navCancelled'] }}</span>
+        </a>
+        <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">
+          <span class="glyph">▤</span><span class="label">{{ i18n.t['navDashboard'] }}</span>
         </a>
         <a *ngIf="auth.isSupervisor" routerLink="/settings/hospitals" routerLinkActive="active">
           <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}</span>

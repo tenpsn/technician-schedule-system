@@ -14,11 +14,12 @@ const DICT: Record<Lang, Record<string, string>> = {
     accessOwn: 'ช่างเทคนิคเห็นเฉพาะงานที่ได้รับมอบหมายของตัวเอง',
     searchPh: 'ค้นหา SR / ลูกค้า / ประเภทงาน',
     navSchedule: 'ตารางงาน', navMySchedule: 'ตารางงานของฉัน', navAdd: 'เพิ่มงาน',
-    navCancelled: 'งานที่ยกเลิก', navHospitals: 'ตั้งค่า โรงพยาบาล',
+    navCancelled: 'งานที่ยกเลิก', navHospitals: 'ตั้งค่า โรงพยาบาล', navDashboard: 'แดชบอร์ดช่าง',
     team: 'ทีมช่าง', clearFilter: 'ล้างตัวกรอง', queueTitle: 'รออนุมัติแผนงาน',
+    myPendingTitle: 'งานของฉันที่รออนุมัติ',
     viewMonth: 'ปฏิทินเดือน', viewWeek: 'สัปดาห์', viewDay: 'ไทม์ไลน์รายวัน',
     jobsUnit: 'งาน', hoursUnit: 'ชม.', techLoad: 'ชั่วโมงงานเดือนนี้', statQueued: 'รออนุมัติ',
-    scopeAll: 'งานของทุกคน', scopeMine: 'งานของฉัน', scopeOwnOnly: 'สิทธิ์: เห็นเฉพาะงานของตัวเอง',
+    scopeAll: 'งานของทุกคน', scopeMine: 'งานของฉัน',
     jobDetail: 'รายละเอียดงาน', back: 'กลับ', planning: 'Planning (แผนงาน)', planDate: 'วันที่วางแผน',
     timeLabel: 'เวลา', statusLabel: 'สถานะงาน', customer: 'ลูกค้า', site: 'สถานที่', jobType: 'ประเภทงาน',
     owner: 'ช่างผู้รับผิดชอบ', postpone: 'เลื่อนงาน', cancelJob: 'ยกเลิกงาน', approvePlan: 'อนุมัติแผนงาน',
@@ -44,6 +45,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     actualDate: 'วันที่ทำงานจริง', actualLocation: 'สถานที่จริง', actualDescription: 'รายละเอียดงานที่ทำได้จริง',
     save: 'บันทึก', rescheduleHistory: 'ประวัติการเลื่อน', reasonWord: 'เหตุผล', byWord: 'โดย',
     cancelledInfo: 'งานนี้ถูกยกเลิกแล้ว', cancelledBy: 'ผู้ยกเลิก', cancelledAt: 'เวลายกเลิก',
+    approvedInfo: 'งานนี้ได้รับการอนุมัติแล้ว', approvedByLabel: 'ผู้อนุมัติ', approvedAtLabel: 'วันที่อนุมัติ', approvalNoteLabel: 'หมายเหตุ',
     today: 'วันนี้', prev: 'ก่อนหน้า', next: 'ถัดไป', noResults: 'ไม่พบข้อมูล', loading: 'กำลังโหลด...',
     saving: 'กำลังบันทึก…', saved: 'บันทึกแล้ว ✓', approving: 'กำลังอนุมัติ…', approvedDone: 'อนุมัติแล้ว ✓',
     cancelling: 'กำลังยกเลิก…', cancelledDone: 'ยกเลิกแล้ว ✓', postponing: 'กำลังเลื่อน…', postponedDone: 'เลื่อนแล้ว ✓',
@@ -66,20 +68,31 @@ const DICT: Record<Lang, Record<string, string>> = {
     changePassword: 'เปลี่ยนรหัสผ่าน', currentPassword: 'รหัสผ่านปัจจุบัน', newPassword: 'รหัสผ่านใหม่',
     newPasswordPh: 'เว้นว่างไว้หากไม่ต้องการเปลี่ยนรหัสผ่าน', toastProfileUpdated: 'บันทึกข้อมูลส่วนตัวแล้ว',
     notifications: 'การแจ้งเตือน', markAllRead: 'อ่านทั้งหมด', noNotifications: 'ไม่มีการแจ้งเตือน',
+    dashboardTitle: 'แดชบอร์ดช่าง', colAssigned: 'งานที่ได้รับ', colCancelRate: 'อัตรายกเลิก',
+    colRescheduled: 'เลื่อนงาน', colHoursWorked: 'ชั่วโมงที่ทำ', colDaysWorked: 'วันที่ทำงาน',
+    selectTechHint: 'คลิกชื่อช่างเพื่อดูรายละเอียด', jobTypeBreakdown: 'สัดส่วนประเภทงาน',
+    dailyCalendar: 'วันที่ทำงานในเดือนนี้', jobList: 'รายการงานทั้งหมด', noJobsThisMonth: 'ไม่มีงานในเดือนนี้',
+    noJobsThisYear: 'ไม่มีงานในปีนี้',
+    colDuration: 'ระยะเวลา', viewByMonth: 'รายเดือน', viewByYear: 'รายปี',
+    monthlyBreakdown: 'สรุปรายเดือน',
+    scopeCompleted: 'จากงานที่เสร็จสิ้น', scopeCancelled: 'จากงานที่ยกเลิกแล้ว',
+    scopeOverdue: 'จากงานที่ค้างเกินกำหนด', scopeRescheduled: 'จากงานที่เคยเลื่อน',
+    rescheduledCountLabel: 'เลื่อน', timesWord: 'ครั้ง', totalLabel: 'รวมทุกคน',
   },
   en: {
-    brand: 'Technician Schedule System', langShort: 'EN', themeBtn: 'Toggle light / dark',
+    brand: 'Technician System', langShort: 'EN', themeBtn: 'Toggle light / dark',
     login: 'Sign in', logout: 'Sign out', username: 'Username', password: 'Password',
     loginLead: 'Monthly, weekly and daily service schedules for medical equipment teams and dispatchers.',
     access: 'Access levels', accessAll: 'Administrator and lead technician see every technician’s jobs',
     accessOwn: 'Technician sees only their own assigned jobs',
     searchPh: 'Search SR / customer / job type',
     navSchedule: 'Schedule', navMySchedule: 'My schedule', navAdd: 'New job',
-    navCancelled: 'Cancelled jobs', navHospitals: 'Hospital settings',
+    navCancelled: 'Cancelled jobs', navHospitals: 'Hospital settings', navDashboard: 'Tech dashboard',
     team: 'Technicians', clearFilter: 'Clear filters', queueTitle: 'Pending approval',
+    myPendingTitle: 'My jobs pending approval',
     viewMonth: 'Month', viewWeek: 'Week', viewDay: 'Day timeline',
     jobsUnit: 'jobs', hoursUnit: 'h', techLoad: 'Hours scheduled this month', statQueued: 'Pending',
-    scopeAll: 'All technicians', scopeMine: 'My jobs only', scopeOwnOnly: 'Access: own jobs only',
+    scopeAll: 'All technicians', scopeMine: 'My jobs only',
     jobDetail: 'Job detail', back: 'Back', planning: 'Planning', planDate: 'Planned date',
     timeLabel: 'Time', statusLabel: 'Status', customer: 'Customer', site: 'Site', jobType: 'Job type',
     owner: 'Assigned technician', postpone: 'Postpone', cancelJob: 'Cancel job', approvePlan: 'Approve plan',
@@ -105,6 +118,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     actualDate: 'Actual date', actualLocation: 'Actual location', actualDescription: 'Description of work performed',
     save: 'Save', rescheduleHistory: 'Reschedule history', reasonWord: 'Reason', byWord: 'By',
     cancelledInfo: 'This job has been cancelled', cancelledBy: 'Cancelled by', cancelledAt: 'Cancelled at',
+    approvedInfo: 'This job has been approved', approvedByLabel: 'Approved by', approvedAtLabel: 'Approved at', approvalNoteLabel: 'Note',
     today: 'Today', prev: 'Prev', next: 'Next', noResults: 'No results', loading: 'Loading...',
     saving: 'Saving…', saved: 'Saved ✓', approving: 'Approving…', approvedDone: 'Approved ✓',
     cancelling: 'Cancelling…', cancelledDone: 'Cancelled ✓', postponing: 'Rescheduling…', postponedDone: 'Rescheduled ✓',
@@ -127,6 +141,16 @@ const DICT: Record<Lang, Record<string, string>> = {
     changePassword: 'Change password', currentPassword: 'Current password', newPassword: 'New password',
     newPasswordPh: 'Leave blank to keep your current password', toastProfileUpdated: 'Profile updated',
     notifications: 'Notifications', markAllRead: 'Mark all read', noNotifications: 'No notifications',
+    dashboardTitle: 'Technician dashboard', colAssigned: 'Assigned', colCancelRate: 'Cancel rate',
+    colRescheduled: 'Rescheduled', colHoursWorked: 'Hours worked', colDaysWorked: 'Days worked',
+    selectTechHint: 'Click a technician to see detail', jobTypeBreakdown: 'Job type breakdown',
+    dailyCalendar: 'Days worked this month', jobList: 'All jobs', noJobsThisMonth: 'No jobs this month',
+    noJobsThisYear: 'No jobs this year',
+    colDuration: 'Duration', viewByMonth: 'Monthly', viewByYear: 'Yearly',
+    monthlyBreakdown: 'Monthly breakdown',
+    scopeCompleted: 'from completed jobs', scopeCancelled: 'from cancelled jobs',
+    scopeOverdue: 'from overdue jobs', scopeRescheduled: 'from rescheduled jobs',
+    rescheduledCountLabel: 'moved', timesWord: 'times', totalLabel: 'Total (all)',
   }
 };
 
@@ -136,13 +160,13 @@ const STATUS_LABEL: Record<Lang, Record<string, string>> = {
     completed: 'เสร็จสิ้น', overdue: 'ค้างเกินกำหนด', cancelled: 'ยกเลิกแล้ว', rescheduled: 'เลื่อนแล้ว'
   },
   en: {
-    draft: 'Draft', pending_approval: 'Pending approval', approved: 'Approved', in_progress: 'In progress',
+    draft: 'Draft', pending_approval: 'Pending', approved: 'Approved', in_progress: 'In progress',
     completed: 'Completed', overdue: 'Overdue', cancelled: 'Cancelled', rescheduled: 'Rescheduled'
   }
 };
 
 const TYPE_LABEL_EN: Record<string, string> = {
-  'MA': 'MA (Preventive)', 'ติดตั้ง': 'Installation', 'ซ่อม': 'Repair'
+  'MA': 'MA (Preventive)', 'ติดตั้ง': 'Installation', 'ซ่อม': 'Repair', 'อื่นๆ': 'Other'
 };
 
 const ROLE_KEY: Record<string, string> = {

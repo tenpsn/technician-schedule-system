@@ -52,9 +52,9 @@ import { I18nService } from '../../services/i18n.service';
                 <td>{{ order.customerName }}</td>
                 <td><span class="badge">{{ i18n.typeLabel(order.workType) }}</span></td>
                 <td>{{ order.technician?.fullName }}</td>
-                <td class="mono">{{ order.plannedDate | date:'dd/MM/yyyy' }}</td>
+                <td class="mono">{{ order.plannedDate | localDate:'dd/MM/yyyy' }}</td>
                 <td>{{ order.cancelledBy?.fullName }}</td>
-                <td class="mono">{{ order.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td class="mono">{{ order.cancelledAt | localDate:'dd/MM/yyyy HH:mm' }}</td>
                 <td class="reason-cell">{{ order.cancelReason }}</td>
               </tr>
               <tr *ngIf="filteredOrders.length === 0">

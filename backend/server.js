@@ -10,6 +10,7 @@ const authRoutes = require('./routes/authRoutes');
 const workOrderRoutes = require('./routes/workOrderRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const hospitalRoutes = require('./routes/hospitalRoutes');
+const lineRoutes = require('./routes/lineRoutes');
 
 // Cron jobs
 require('./cron/overdueCheck');
@@ -23,7 +24,11 @@ connectDB();
 const app = express();
 
 // Body parser
-app.use(express.json());
+// `verify` stashes the raw bytes on the request — the LINE webhook needs them
+// (not the parsed object) to check the x-line-signature HMAC.
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // CORS
@@ -45,6 +50,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/work-orders', workOrderRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/hospitals', hospitalRoutes);
+app.use('/api/line', lineRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -4,6 +4,7 @@ const WorkOrder = require('../models/WorkOrder');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
+const { createWorkOrder } = require('../services/workOrderService');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -17,16 +18,6 @@ const DETAIL_INCLUDE = [
   { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
 ];
 
-// Helper: Generate SR Number
-const generateSRNumber = async () => {
-  const now = new Date();
-  const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const count = await WorkOrder.count({
-    where: { srNumber: { [Op.like]: `SR-${yearMonth}%` } }
-  });
-  return `SR-${yearMonth}-${String(count + 1).padStart(4, '0')}`;
-};
-
 // Create Work Order (Planning)
 router.post('/', protect, async (req, res) => {
   try {
@@ -38,34 +29,17 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({ message: 'Please provide all required fields' });
     }
 
-    const srNumber = await generateSRNumber();
-
-    const workOrder = await WorkOrder.create({
-      srNumber,
-      technicianId: req.user.id,
+    const workOrder = await createWorkOrder({
+      technician: req.user,
       customerName,
       customerLocation,
       workType,
       description,
       plannedDate,
       plannedStartTime,
-      plannedEndTime,
-      status: 'pending_approval'
+      plannedEndTime
     });
 
-    // Notify supervisor
-    const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
-    for (const sup of supervisors) {
-      await Notification.create({
-        recipientId: sup.id,
-        type: 'approval_needed',
-        title: '📋 รออนุมัติแผนงาน',
-        message: `ช่าง ${req.user.fullName} เสนอแผนงาน ${srNumber} - ${customerName}`,
-        relatedWorkOrderId: workOrder.id
-      });
-    }
-
-    logger.info(`Work order created: ${srNumber} by ${req.user.username}`);
     res.status(201).json(workOrder);
   } catch (error) {
     logger.error(`Create work order error: ${error.message}`);
@@ -110,9 +84,9 @@ router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) =
     const { month, year, technician, status } = req.query;
     const where = {};
 
-    if (month && year) {
-      const startDate = new Date(year, parseInt(month) - 1, 1);
-      const endDate = new Date(year, parseInt(month), 1);
+    if (year) {
+      const startDate = month ? new Date(year, parseInt(month) - 1, 1) : new Date(year, 0, 1);
+      const endDate = month ? new Date(year, parseInt(month), 1) : new Date(parseInt(year) + 1, 0, 1);
       where.plannedDate = { [Op.gte]: startDate, [Op.lt]: endDate };
     }
 

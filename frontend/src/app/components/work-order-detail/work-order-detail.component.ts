@@ -35,11 +35,23 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="alert-title">✕ {{ i18n.t['cancelledInfo'] }}</div>
             <div class="meta-grid">
               <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledBy'] }}</div><div class="meta-value">{{ order.cancelledBy?.fullName }}</div></div>
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledAt'] }}</div><div class="meta-value">{{ order.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledAt'] }}</div><div class="meta-value">{{ order.cancelledAt | localDate:'dd/MM/yyyy HH:mm' }}</div></div>
             </div>
             <div class="reason-box">
               <div class="meta-label">{{ i18n.t['cancelReason'] }}</div>
               <p>{{ order.cancelReason }}</p>
+            </div>
+          </div>
+
+          <div class="alert-info" *ngIf="order.approvedBy">
+            <div class="alert-title">✓ {{ i18n.t['approvedInfo'] }}</div>
+            <div class="meta-grid">
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['approvedByLabel'] }}</div><div class="meta-value">{{ order.approvedBy?.fullName }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['approvedAtLabel'] }}</div><div class="meta-value">{{ order.approvedAt | localDate:'dd/MM/yyyy HH:mm' }}</div></div>
+            </div>
+            <div class="reason-box" *ngIf="order.approvalNote">
+              <div class="meta-label">{{ i18n.t['approvalNoteLabel'] }}</div>
+              <p>{{ order.approvalNote }}</p>
             </div>
           </div>
 
@@ -53,7 +65,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="section">
             <div class="section-title">{{ i18n.t['planning'] }}</div>
             <div class="meta-grid">
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['planDate'] }}</div><div class="meta-value mono">{{ order.plannedDate | date:'dd/MM/yyyy' }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['planDate'] }}</div><div class="meta-value mono">{{ order.plannedDate | localDate:'dd/MM/yyyy' }}</div></div>
               <div class="meta-item"><div class="meta-label">{{ i18n.t['timeLabel'] }}</div><div class="meta-value mono">{{ order.plannedStartTime }} - {{ order.plannedEndTime }}</div></div>
             </div>
             <div class="field-list" *ngIf="order.description">
@@ -64,7 +76,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="section" *ngIf="order.actualDescription">
             <div class="section-title">✓ Actual</div>
             <div class="meta-grid">
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['actualDate'] }}</div><div class="meta-value mono">{{ order.actualDate | date:'dd/MM/yyyy' }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['actualDate'] }}</div><div class="meta-value mono">{{ order.actualDate | localDate:'dd/MM/yyyy' }}</div></div>
               <div class="meta-item"><div class="meta-label">{{ i18n.t['timeLabel'] }}</div><div class="meta-value mono">{{ order.actualStartTime }} - {{ order.actualEndTime }}</div></div>
               <div class="meta-item"><div class="meta-label">{{ i18n.t['actualLocation'] }}</div><div class="meta-value">{{ order.actualLocation }}</div></div>
             </div>
@@ -76,9 +88,9 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="section" *ngIf="order.rescheduleHistory && order.rescheduleHistory.length > 0">
             <div class="section-title">↻ {{ i18n.t['rescheduleHistory'] }}</div>
             <div class="history-item" *ngFor="let h of order.rescheduleHistory">
-              <div class="history-date mono">{{ h.fromDate | date:'dd/MM/yyyy' }} → {{ h.toDate | date:'dd/MM/yyyy' }}</div>
+              <div class="history-date mono">{{ h.fromDate | localDate:'dd/MM/yyyy' }} → {{ h.toDate | localDate:'dd/MM/yyyy' }}</div>
               <div class="history-reason">{{ i18n.t['reasonWord'] }}: {{ h.reason }}</div>
-              <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedBy?.fullName || '—' }} · {{ h.changedAt | date:'dd/MM/yyyy HH:mm' }}</div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedBy?.fullName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
             </div>
           </div>
         </div>
@@ -146,7 +158,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="summary-box">
             <div class="mono kicker">{{ order.srNumber }}</div>
             <div class="review-title">{{ order.customerName }}</div>
-            <div class="summary-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.plannedDate | date:'dd/MM/yyyy' }} · {{ order.plannedStartTime }}-{{ order.plannedEndTime }}</div>
+            <div class="summary-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.plannedDate | localDate:'dd/MM/yyyy' }} · {{ order.plannedStartTime }}-{{ order.plannedEndTime }}</div>
           </div>
           <div class="modal-actions">
             <button type="button" [disabled]="busy === 'approve'" (click)="confirmApprove()" class="btn-approve">{{ approveConfirmLabel }}</button>
@@ -226,6 +238,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .card-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
     .alert-warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); padding: 12px 14px; border-radius: var(--radius); font-weight: 600; }
     .alert-muted { background: var(--alt); border: 1px solid var(--line2); border-radius: var(--radius); padding: 16px 18px; }
+    .alert-info { background: var(--info-bg); border: 1px solid var(--info-line); color: var(--info-text); border-radius: var(--radius); padding: 16px 18px; }
     .alert-title { font-weight: 700; margin-bottom: 12px; }
     .reason-box { margin-top: 12px; }
     .reason-box p { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 6px 0 0; font-style: italic; }
@@ -404,6 +417,7 @@ export class WorkOrderDetailComponent implements OnInit {
       case 'approved':
         return 'st-info';
       case 'in_progress':
+      case 'completed':
         return 'st-success';
       case 'overdue':
         return 'st-danger';

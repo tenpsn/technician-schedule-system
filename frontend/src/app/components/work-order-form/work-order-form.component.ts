@@ -89,12 +89,18 @@ import { Router } from '@angular/router';
                   </div>
                 </div>
                 <div class="field">
-                  <label>{{ i18n.t['startTime'] }}</label>
+                  <label>{{ i18n.t['startTime'] }} *</label>
                   <app-time-picker formControlName="plannedStartTime"></app-time-picker>
+                  <div class="error" *ngIf="form.get('plannedStartTime')?.invalid && form.get('plannedStartTime')?.touched">
+                    {{ i18n.lang === 'th' ? 'กรุณาเลือกเวลาเริ่ม' : 'Required' }}
+                  </div>
                 </div>
                 <div class="field">
-                  <label>{{ i18n.t['endTime'] }}</label>
+                  <label>{{ i18n.t['endTime'] }} *</label>
                   <app-time-picker formControlName="plannedEndTime"></app-time-picker>
+                  <div class="error" *ngIf="form.get('plannedEndTime')?.invalid && form.get('plannedEndTime')?.touched">
+                    {{ i18n.lang === 'th' ? 'กรุณาเลือกเวลาสิ้นสุด' : 'Required' }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -177,8 +183,8 @@ export class WorkOrderFormComponent implements OnInit {
       workType: ['', Validators.required],
       workTypeOther: [''],
       plannedDate: ['', Validators.required],
-      plannedStartTime: [''],
-      plannedEndTime: [''],
+      plannedStartTime: ['', Validators.required],
+      plannedEndTime: ['', Validators.required],
       description: ['']
     });
 
@@ -256,10 +262,14 @@ export class WorkOrderFormComponent implements OnInit {
     this.loading = true;
 
     const { workTypeOther, ...formValue } = this.form.value;
-    const payload = {
-      ...formValue,
-      workType: formValue.workType === 'อื่นๆ' ? workTypeOther.trim() : formValue.workType
-    };
+    let description = formValue.description;
+    if (formValue.workType === 'อื่นๆ' && workTypeOther) {
+      // Matches the LINE bot's "อื่นๆ" flow: workType always stays "อื่นๆ",
+      // and what the user typed is folded into the description instead.
+      const note = `ประเภทงาน: ${workTypeOther.trim()}`;
+      description = description ? `${note}\n${description}` : note;
+    }
+    const payload = { ...formValue, description };
 
     this.workOrderService.create(payload).subscribe({
       next: (res) => {
