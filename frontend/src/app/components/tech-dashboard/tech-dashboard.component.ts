@@ -75,7 +75,7 @@ interface TypeBreakdown {
                 <td class="mono">{{ cancelledOf(t._id).length }}</td>
                 <td class="mono">{{ cancelRateOf(t._id) }}%</td>
                 <td class="mono">{{ overdueOf(t._id).length }}</td>
-                <td class="mono">{{ rescheduledOf(t._id).length }}</td>
+                <td class="mono">{{ rescheduleEventCountOf(t._id) }}</td>
                 <td class="mono">{{ hoursOf(t._id) }} {{ i18n.t['hoursUnit'] }}</td>
                 <td class="mono">{{ daysWorkedCountOf(t._id) }}</td>
               </tr>
@@ -91,7 +91,7 @@ interface TypeBreakdown {
                 <td class="mono">{{ cancelledOf(ALL_ID).length }}</td>
                 <td class="mono">{{ cancelRateOf(ALL_ID) }}%</td>
                 <td class="mono">{{ overdueOf(ALL_ID).length }}</td>
-                <td class="mono">{{ rescheduledOf(ALL_ID).length }}</td>
+                <td class="mono">{{ rescheduleEventCountOf(ALL_ID) }}</td>
                 <td class="mono">{{ hoursOf(ALL_ID) }} {{ i18n.t['hoursUnit'] }}</td>
                 <td class="mono">{{ daysWorkedCountOf(ALL_ID) }}</td>
               </tr>
@@ -127,7 +127,7 @@ interface TypeBreakdown {
             <div class="stat-label">{{ i18n.statusLabel('overdue') }}</div>
           </button>
           <button type="button" class="stat-tile clickable" [class.active]="jobFilter === 'rescheduled'" (click)="setJobFilter('rescheduled')">
-            <div class="stat-value mono">{{ rescheduledOf(tech._id).length }}</div>
+            <div class="stat-value mono">{{ rescheduleEventCountOf(tech._id) }}</div>
             <div class="stat-label">{{ i18n.t['colRescheduled'] }}</div>
           </button>
           <div class="stat-tile">
@@ -158,7 +158,10 @@ interface TypeBreakdown {
             </div>
             <div class="mini-grid">
               <span class="mini-blank" *ngFor="let b of leadingBlanks"></span>
-              <span class="mini-cell" *ngFor="let d of monthDayNumbers" [class.worked]="workedDayNumbersOf(tech._id).includes(d)">{{ d }}</span>
+              <button type="button" class="mini-cell" *ngFor="let d of monthDayNumbers"
+                      [class.worked]="workedDayNumbersOf(tech._id).includes(d)"
+                      [class.active]="dayFilter === d"
+                      (click)="toggleDayFilter(d)">{{ d }}</button>
             </div>
           </div>
 
@@ -174,7 +177,7 @@ interface TypeBreakdown {
 
         <div class="job-list-head">
           <span class="mono">{{ i18n.t['jobList'] }}</span>
-          <button type="button" class="link-btn" *ngIf="jobFilter !== 'all' || typeFilter" (click)="clearJobListFilters()">{{ i18n.t['clearFilter'] }}</button>
+          <button type="button" class="link-btn" *ngIf="jobFilter !== 'all' || typeFilter || dayFilter" (click)="clearJobListFilters()">{{ i18n.t['clearFilter'] }}</button>
           <span class="spacer"></span>
           <span class="mono count">{{ jobsOf(tech._id).length }} / {{ assignedOf(tech._id).length }} {{ i18n.t['items'] }}</span>
         </div>
@@ -297,7 +300,10 @@ interface TypeBreakdown {
     .mini-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
     .mini-blank { visibility: hidden; }
     .mini-cell, .mini-blank { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 11px; color: var(--sub); background: var(--alt); border: 1px solid var(--line2); }
+    .mini-cell { font: inherit; cursor: pointer; padding: 0; }
+    .mini-cell:hover { border-color: var(--accent); }
     .mini-cell.worked { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+    .mini-cell.active { outline: 2px solid var(--ink); outline-offset: 1px; }
 
     .job-list-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line2); font-size: 13px; font-weight: 700; }
     .job-list-head .spacer { flex: 1; }
@@ -336,6 +342,7 @@ export class TechDashboardComponent implements OnInit {
   searchText = '';
   jobFilter: 'all' | 'completed' | 'cancelled' | 'overdue' | 'rescheduled' = 'all';
   typeFilter: string | null = null;
+  dayFilter: number | null = null;
 
   years = Array.from({ length: 41 }, (_, i) => new Date().getFullYear() - 20 + i);
   readonly ALL_ID = '__ALL__';
@@ -415,6 +422,7 @@ export class TechDashboardComponent implements OnInit {
     this.loading = true;
     this.jobFilter = 'all';
     this.typeFilter = null;
+    this.dayFilter = null;
     const month = this.viewMode === 'month' ? this.selectedMonth : undefined;
     this.workOrderService.getAllOrders(month, this.selectedYear).subscribe({
       next: (orders) => {
@@ -434,19 +442,26 @@ export class TechDashboardComponent implements OnInit {
     this.selectedTechId = this.selectedTechId === id ? null : id;
     this.jobFilter = 'all';
     this.typeFilter = null;
+    this.dayFilter = null;
   }
 
   setJobFilter(filter: 'all' | 'completed' | 'cancelled' | 'overdue' | 'rescheduled') {
     this.jobFilter = this.jobFilter === filter ? 'all' : filter;
+    this.dayFilter = null;
   }
 
   setTypeFilter(type: string) {
     this.typeFilter = this.typeFilter === type ? null : type;
   }
 
+  toggleDayFilter(day: number) {
+    this.dayFilter = this.dayFilter === day ? null : day;
+  }
+
   clearJobListFilters() {
     this.jobFilter = 'all';
     this.typeFilter = null;
+    this.dayFilter = null;
   }
 
   private techIdOf(order: WorkOrder): string | null {
@@ -480,8 +495,12 @@ export class TechDashboardComponent implements OnInit {
 
   jobsOf(techId: string): WorkOrder[] {
     return this.assignedOf(techId)
-      .filter(o => this.matchesJobFilter(o) && this.matchesTypeFilter(o))
+      .filter(o => this.matchesJobFilter(o) && this.matchesTypeFilter(o) && this.matchesDayFilter(o))
       .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime());
+  }
+
+  private matchesDayFilter(o: WorkOrder): boolean {
+    return this.dayFilter == null || this.dateOf(o).getDate() === this.dayFilter;
   }
 
   private statusFilteredOf(techId: string): WorkOrder[] {
@@ -515,8 +534,8 @@ export class TechDashboardComponent implements OnInit {
     return this.assignedOf(techId).filter(o => o.status === 'overdue' || o.isOverdue);
   }
 
-  rescheduledOf(techId: string): WorkOrder[] {
-    return this.assignedOf(techId).filter(o => (o.rescheduleHistory || []).length > 0);
+  rescheduleEventCountOf(techId: string): number {
+    return this.assignedOf(techId).reduce((sum, o) => sum + (o.rescheduleHistory || []).length, 0);
   }
 
   cancelRateOf(techId: string): number {

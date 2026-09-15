@@ -43,18 +43,6 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             </div>
           </div>
 
-          <div class="alert-info" *ngIf="order.approvedBy">
-            <div class="alert-title">✓ {{ i18n.t['approvedInfo'] }}</div>
-            <div class="meta-grid">
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['approvedByLabel'] }}</div><div class="meta-value">{{ order.approvedBy?.fullName }}</div></div>
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['approvedAtLabel'] }}</div><div class="meta-value">{{ order.approvedAt | localDate:'dd/MM/yyyy HH:mm' }}</div></div>
-            </div>
-            <div class="reason-box" *ngIf="order.approvalNote">
-              <div class="meta-label">{{ i18n.t['approvalNoteLabel'] }}</div>
-              <p>{{ order.approvalNote }}</p>
-            </div>
-          </div>
-
           <div class="meta-grid">
             <div class="meta-item"><div class="meta-label">{{ i18n.t['customer'] }}</div><div class="meta-value">{{ order.customerName }}</div></div>
             <div class="meta-item"><div class="meta-label">{{ i18n.t['site'] }}</div><div class="meta-value">{{ order.customerLocation }}</div></div>
@@ -73,15 +61,38 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             </div>
           </div>
 
-          <div class="section" *ngIf="order.actualDescription">
-            <div class="section-title">✓ Actual</div>
-            <div class="meta-grid">
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['actualDate'] }}</div><div class="meta-value mono">{{ order.actualDate | localDate:'dd/MM/yyyy' }}</div></div>
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['timeLabel'] }}</div><div class="meta-value mono">{{ order.actualStartTime }} - {{ order.actualEndTime }}</div></div>
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['actualLocation'] }}</div><div class="meta-value">{{ order.actualLocation }}</div></div>
+          <div class="section" *ngIf="order.actualLog && order.actualLog.length > 0">
+            <div class="section-title">✓ Actual ({{ order.actualLog.length }})</div>
+            <div class="actual-item" *ngFor="let log of order.actualLog; let i = index">
+              <div class="actual-item-head">
+                <span class="actual-item-badge">#{{ i + 1 }}</span>
+                <span class="mono">{{ log.actualDate | localDate:'dd/MM/yyyy' }} · {{ log.actualStartTime }} - {{ log.actualEndTime }}</span>
+              </div>
+              <div class="field-list">
+                <div class="field-row" *ngIf="log.actualLocation"><span class="field-label">{{ i18n.t['actualLocation'] }}</span><span class="field-value">{{ log.actualLocation }}</span></div>
+                <div class="field-row"><span class="field-label">{{ i18n.t['actualDescription'] }}</span><span class="field-value">{{ log.actualDescription }}</span></div>
+                <div class="field-row" *ngIf="isRepairType && log.repairCompleted !== null && log.repairCompleted !== undefined">
+                  <span class="field-label">{{ i18n.t['repairStatusLabel'] }}</span>
+                  <span class="field-value">{{ log.repairCompleted ? i18n.t['repairDoneYes'] : i18n.t['repairDoneNo'] }}</span>
+                </div>
+                <div class="field-row" *ngIf="isRepairType && log.repairCompleted === false">
+                  <span class="field-label">{{ i18n.t['repairIncompleteReason'] }}</span>
+                  <span class="field-value">{{ log.repairIncompleteReason }}</span>
+                </div>
+                <div class="field-row" *ngIf="isInstallationType">
+                  <span class="field-label">{{ i18n.t['installationDelivered'] }}</span>
+                  <span class="field-value">{{ log.installationDelivered ? i18n.t['deliveredYes'] : i18n.t['deliveredNo'] }}</span>
+                </div>
+              </div>
             </div>
-            <div class="field-list">
-              <div class="field-row"><span class="field-label">{{ i18n.t['actualDescription'] }}</span><span class="field-value">{{ order.actualDescription }}</span></div>
+          </div>
+
+          <div class="section" *ngIf="order.approvalHistory && order.approvalHistory.length > 0">
+            <div class="section-title">✓ {{ i18n.t['approvalHistoryLabel'] }}</div>
+            <div class="approval-item" *ngFor="let a of order.approvalHistory; let i = index">
+              <div class="history-date mono">#{{ i + 1 }} · {{ a.approvedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: {{ a.approvedByName || '—' }}</div>
+              <div class="history-reason" *ngIf="a.approvalNote">{{ i18n.t['approvalNoteLabel'] }}: {{ a.approvalNote }}</div>
             </div>
           </div>
 
@@ -90,7 +101,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="history-item" *ngFor="let h of order.rescheduleHistory">
               <div class="history-date mono">{{ h.fromDate | localDate:'dd/MM/yyyy' }} → {{ h.toDate | localDate:'dd/MM/yyyy' }}</div>
               <div class="history-reason">{{ i18n.t['reasonWord'] }}: {{ h.reason }}</div>
-              <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedBy?.fullName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedByName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
             </div>
           </div>
         </div>
@@ -99,7 +110,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <button *ngIf="canReschedule" (click)="showRescheduleForm = true" class="btn-postpone">{{ i18n.t['postpone'] }}</button>
           <button *ngIf="canCancel" (click)="openCancel()" class="btn-cancel">{{ i18n.t['cancelJob'] }}</button>
           <button *ngIf="canApprove" (click)="showApproveModal = true" class="btn-approve">{{ i18n.t['approvePlan'] }}</button>
-          <button *ngIf="canUpdateActual" (click)="showActualForm = true" class="btn-update">{{ i18n.t['updateStatus'] }}</button>
+          <button *ngIf="canUpdateActual" (click)="openActualForm()" class="btn-update">{{ i18n.t['updateStatus'] }}</button>
         </div>
       </div>
 
@@ -160,9 +171,13 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="review-title">{{ order.customerName }}</div>
             <div class="summary-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.plannedDate | localDate:'dd/MM/yyyy' }} · {{ order.plannedStartTime }}-{{ order.plannedEndTime }}</div>
           </div>
+          <label class="field">
+            <span>{{ i18n.t['approvalNoteLabel'] }} {{ i18n.t['optional'] }}</span>
+            <textarea [(ngModel)]="approvalNote" rows="3"></textarea>
+          </label>
           <div class="modal-actions">
             <button type="button" [disabled]="busy === 'approve'" (click)="confirmApprove()" class="btn-approve">{{ approveConfirmLabel }}</button>
-            <button type="button" [disabled]="busy === 'approve'" (click)="showApproveModal = false" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
+            <button type="button" [disabled]="busy === 'approve'" (click)="showApproveModal = false; approvalNote = ''" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
           </div>
         </div>
       </div>
@@ -209,6 +224,26 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
               <span>{{ i18n.t['actualDescription'] }} *</span>
               <textarea formControlName="actualDescription" rows="4"></textarea>
             </label>
+
+            <div class="field" *ngIf="isRepairType">
+              <span>{{ i18n.t['repairStatusLabel'] }} *</span>
+              <div class="chip-row">
+                <button type="button" class="chip" [class.chip-active]="actualForm.value.repairCompleted === true" (click)="actualForm.patchValue({ repairCompleted: true, repairIncompleteReason: '' })">{{ i18n.t['repairDoneYes'] }}</button>
+                <button type="button" class="chip" [class.chip-active]="actualForm.value.repairCompleted === false" (click)="actualForm.patchValue({ repairCompleted: false })">{{ i18n.t['repairDoneNo'] }}</button>
+              </div>
+            </div>
+            <label class="field" *ngIf="isRepairType && actualForm.value.repairCompleted === false">
+              <span>{{ i18n.t['repairIncompleteReason'] }} *</span>
+              <textarea formControlName="repairIncompleteReason" rows="3" [placeholder]="i18n.t['repairIncompleteReasonPh']"></textarea>
+            </label>
+
+            <label class="field field-checkbox" *ngIf="isInstallationType">
+              <span class="checkbox-row">
+                <input type="checkbox" formControlName="installationDelivered">
+                {{ i18n.t['installationDelivered'] }}
+              </span>
+            </label>
+
             <div class="modal-actions">
               <button type="submit" [disabled]="busy === 'actual'" class="btn-update">{{ saveActualLabel }}</button>
               <button type="button" [disabled]="busy === 'actual'" (click)="showActualForm = false" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
@@ -258,9 +293,16 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .field-value { font-size: 13.5px; font-weight: 500; }
 
     .history-item { background: var(--warn-bg); padding: 12px; margin: 8px 0; border-radius: var(--radius); border-left: 3px solid #d98b1e; }
+    .approval-item { background: var(--info-bg); padding: 12px; margin: 8px 0; border-radius: var(--radius); border-left: 3px solid var(--info-text, #2563eb); }
     .history-date { font-weight: 700; margin-bottom: 5px; }
     .history-reason { color: var(--sub); margin-bottom: 5px; }
     .history-by { font-size: 12px; color: var(--sub); }
+
+    .actual-item { background: var(--surface); padding: 12px 14px; margin: 8px 0; border-radius: var(--radius); border-left: 3px solid #0d8f72; }
+    .actual-item-head { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+    .actual-item-badge { background: #0d8f72; color: #fff; border-radius: 999px; font-size: 11px; padding: 2px 9px; }
+    .actual-item .field-list { margin-top: 8px; }
+    .actual-item .field-row:last-child { border-bottom: none; }
 
     .actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line2); background: var(--alt); }
     .actions button { border-radius: var(--radius); height: 46px; padding: 0 18px; font-size: 14px; font-weight: 700; }
@@ -310,6 +352,9 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
     .chip { height: 38px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 19px; font-size: 13px; }
     .chip:hover { border-color: var(--accent); }
+    .chip-active { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .checkbox-row { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--ink); }
+    .checkbox-row input { width: 18px; height: 18px; }
     .modal-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
     .modal-actions button { flex: 1 1 150px; height: 50px; border-radius: var(--radius); font-size: 14.5px; font-weight: 700; }
 
@@ -317,6 +362,8 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
       .actions { flex-direction: column; }
       .actions button { width: 100%; }
       .field-row-pair { flex-direction: column; }
+      .field-row { flex-direction: column; gap: 4px; }
+      .field-label { width: auto; }
     }
   `]
 })
@@ -326,6 +373,7 @@ export class WorkOrderDetailComponent implements OnInit {
   showRescheduleForm = false;
   showCancelForm = false;
   showApproveModal = false;
+  approvalNote = '';
   cancelStage: 'edit' | 'confirm' = 'edit';
   busy: Busy = null;
   actualForm: FormGroup;
@@ -347,7 +395,10 @@ export class WorkOrderDetailComponent implements OnInit {
       actualStartTime: [''],
       actualEndTime: [''],
       actualLocation: [''],
-      actualDescription: ['', Validators.required]
+      actualDescription: ['', Validators.required],
+      repairCompleted: [null],
+      repairIncompleteReason: [''],
+      installationDelivered: [false]
     });
 
     this.rescheduleForm = this.fb.group({
@@ -428,6 +479,14 @@ export class WorkOrderDetailComponent implements OnInit {
     }
   }
 
+  get isRepairType(): boolean {
+    return this.order?.workType === 'ซ่อม';
+  }
+
+  get isInstallationType(): boolean {
+    return this.order?.workType === 'ติดตั้ง';
+  }
+
   get canUpdateActual(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
@@ -480,11 +539,45 @@ export class WorkOrderDetailComponent implements OnInit {
     this.cancelStage = 'edit';
   }
 
+  private toDateInput(value?: string): string {
+    return value ? value.substring(0, 10) : '';
+  }
+
+  openActualForm() {
+    if (this.order) {
+      // Prefill from the previous actual entry if there is one, otherwise fall back
+      // to the planned values so the technician only has to adjust, not retype.
+      this.actualForm.patchValue({
+        actualDate: this.toDateInput(this.order.actualDate) || this.toDateInput(this.order.plannedDate),
+        actualStartTime: this.order.actualStartTime || this.order.plannedStartTime || '',
+        actualEndTime: this.order.actualEndTime || this.order.plannedEndTime || '',
+        actualLocation: this.order.actualLocation || this.order.customerLocation || '',
+        actualDescription: this.order.actualDescription || '',
+        repairCompleted: this.order.repairCompleted ?? null,
+        repairIncompleteReason: this.order.repairIncompleteReason || '',
+        installationDelivered: this.order.installationDelivered || false
+      });
+    }
+    this.showActualForm = true;
+  }
+
   submitActual() {
     if (this.actualForm.invalid) {
       this.toastr.warning(this.i18n.lang === 'th' ? 'กรุณากรอกข้อมูลให้ครบถ้วน' : 'Please fill in all required fields');
       this.actualForm.markAllAsTouched();
       return;
+    }
+
+    if (this.isRepairType) {
+      const repairCompleted = this.actualForm.value.repairCompleted;
+      if (repairCompleted === null || repairCompleted === undefined) {
+        this.toastr.warning(this.i18n.t['toastNeedRepairStatus']);
+        return;
+      }
+      if (repairCompleted === false && !this.actualForm.value.repairIncompleteReason?.trim()) {
+        this.toastr.warning(this.i18n.t['toastNeedRepairReason']);
+        return;
+      }
     }
 
     this.busy = 'actual';
@@ -568,7 +661,7 @@ export class WorkOrderDetailComponent implements OnInit {
 
   confirmApprove() {
     this.busy = 'approve';
-    this.workOrderService.approve(this.order!._id).subscribe({
+    this.workOrderService.approve(this.order!._id, this.approvalNote.trim() || undefined).subscribe({
       next: (res) => {
         this.order = res;
         this.busy = 'approve-done';
@@ -577,6 +670,7 @@ export class WorkOrderDetailComponent implements OnInit {
         setTimeout(() => {
           this.busy = null;
           this.showApproveModal = false;
+          this.approvalNote = '';
           this.cdr.detectChanges();
         }, 700);
       },

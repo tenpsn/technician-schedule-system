@@ -7,7 +7,7 @@ import { AuthService } from './auth.service';
 export interface Hospital {
   _id: string;
   name: string;
-  province: string;
+  address: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -34,9 +34,14 @@ export class HospitalService {
     });
   }
 
-  create(name: string, province: string): Observable<Hospital> {
+  create(name: string, address: string): Observable<Hospital> {
     return this.http.post<Hospital>(`${environment.apiUrl}/hospitals`,
-      { name, province }, { headers: this.getHeaders() });
+      { name, address }, { headers: this.getHeaders() });
+  }
+
+  update(id: string, name: string, address: string): Observable<Hospital> {
+    return this.http.patch<Hospital>(`${environment.apiUrl}/hospitals/${id}`,
+      { name, address }, { headers: this.getHeaders() });
   }
 
   delete(id: string): Observable<any> {

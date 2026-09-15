@@ -4,6 +4,27 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 
+export interface ActualLogEntry {
+  actualDate: string;
+  actualStartTime?: string;
+  actualEndTime?: string;
+  actualLocation?: string;
+  actualDescription: string;
+  repairCompleted?: boolean;
+  repairIncompleteReason?: string;
+  installationDelivered?: boolean;
+  recordedAt: string;
+}
+
+export interface RescheduleHistoryEntry {
+  fromDate: string;
+  toDate: string;
+  reason: string;
+  changedBy: string;
+  changedByName?: string | null;
+  changedAt: string;
+}
+
 export interface WorkOrder {
   _id: string;
   srNumber: string;
@@ -20,16 +41,21 @@ export interface WorkOrder {
   actualEndTime?: string;
   actualLocation?: string;
   actualDescription?: string;
+  repairCompleted?: boolean | null;
+  repairIncompleteReason?: string;
+  installationDelivered?: boolean;
+  actualLog?: ActualLogEntry[];
   status: string;
   approvedBy?: any;
   approvedAt?: string;
   approvalNote?: string;
+  approvalHistory?: { approvedById: string; approvedByName?: string | null; approvalNote?: string | null; approvedAt: string }[];
   cancelledBy?: any;
   cancelledAt?: string;
   cancelReason?: string;
   isOverdue: boolean;
   overdueDays: number;
-  rescheduleHistory: any[];
+  rescheduleHistory: RescheduleHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }

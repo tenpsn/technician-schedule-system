@@ -37,7 +37,7 @@ import { Router } from '@angular/router';
                          autocomplete="off">
                   <ul *ngIf="showSuggestions && hospitalSuggestions.length > 0" class="suggestions">
                     <li *ngFor="let h of hospitalSuggestions" (mousedown)="selectHospital(h)">
-                      <strong>{{ h.name }}</strong> <span class="muted">{{ h.province }}</span>
+                      <strong>{{ h.name }}</strong> <span class="muted">{{ h.address }}</span>
                     </li>
                   </ul>
                   <div class="error" *ngIf="form.get('customerName')?.invalid && form.get('customerName')?.touched">
@@ -247,7 +247,7 @@ export class WorkOrderFormComponent implements OnInit {
   selectHospital(h: Hospital) {
     this.form.patchValue({
       customerName: h.name,
-      customerLocation: h.province
+      customerLocation: h.address
     });
     this.showSuggestions = false;
   }

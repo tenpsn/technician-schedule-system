@@ -5,8 +5,7 @@ const { Op } = require('sequelize');
 const User = require('../models/User');
 const Hospital = require('../models/Hospital');
 const WorkOrder = require('../models/WorkOrder');
-const Notification = require('../models/Notification');
-const { createWorkOrder } = require('../services/workOrderService');
+const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, CANCELLABLE_STATUSES } = require('../services/workOrderService');
 const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = require('../utils/lineJobParser');
 const lineSession = require('../utils/lineSession');
 const logger = require('../config/logger');
@@ -25,7 +24,9 @@ const HELP_TEXT =
 ประเภทงาน: MA / ติดตั้ง / ซ่อม
 วันที่: 20/09/2026
 เวลา: 09:00-12:00
-รายละเอียด: รายละเอียดงาน (ไม่บังคับ)`;
+รายละเอียด: รายละเอียดงาน (ไม่บังคับ)
+
+พิมพ์ "เลื่อนงาน", "ยกเลิกงาน" หรือ "บันทึกงานจริง" แล้วบอทจะถามเลขที่งานและข้อมูลที่ต้องใช้ทีละขั้น`;
 
 const LOGIN_SWITCH_TEXT =
 `ต้องการเปลี่ยนบัญชีที่เชื่อมไว้ พิมพ์ "login" แล้วบอทจะถามทีละขั้น
@@ -43,9 +44,36 @@ const ADD_JOB_PROMPTS = {
   description: 'รายละเอียดงาน (ถ้าไม่มีพิมพ์ - หรือ ข้าม)'
 };
 
-const CANCEL_KEYWORDS = ['ยกเลิก', 'ยกเลิกเพิ่มงาน'];
+// Aborts whichever step-by-step flow is in progress. Deliberately not "ยกเลิก"
+// (which now also means "cancel this job" as its own command) to avoid the two
+// being confused for each other.
+const ABORT_KEYWORDS = ['หยุด'];
 const SKIP_KEYWORDS = ['ข้าม', 'ไม่มี', 'ไม่ระบุ', '-', 'skip'];
 const isSkip = (value) => SKIP_KEYWORDS.includes(value.toLowerCase());
+
+const RESCHEDULABLE_STATUSES = ['approved', 'pending_approval'];
+
+const RESCHEDULE_PROMPTS = {
+  srNumber: 'พิมพ์เลขที่งานที่ต้องการเลื่อน เช่น SR-202609-0034',
+  newDate: 'วันที่ใหม่ (วว/ดด/ปปปป) เช่น 20/09/2026',
+  reason: 'เหตุผลที่เลื่อน'
+};
+
+const CANCEL_JOB_PROMPTS = {
+  srNumber: 'พิมพ์เลขที่งานที่ต้องการยกเลิก เช่น SR-202609-0034',
+  reason: 'เหตุผลที่ยกเลิก'
+};
+
+const ACTUAL_PROMPTS = {
+  srNumber: 'พิมพ์เลขที่งานที่ต้องการบันทึกผลจริง เช่น SR-202609-0034',
+  actualDate: 'วันที่ทำงานจริง (วว/ดด/ปปปป) เช่น 20/09/2026',
+  actualTime: 'เวลาที่ทำงานจริง (HH:MM-HH:MM) เช่น 09:00-12:00',
+  actualLocation: 'สถานที่จริง',
+  actualDescription: 'รายละเอียดงานที่ทำได้จริง',
+  repairCompleted: 'งานซ่อมนี้เสร็จหรือยัง?\n1. เสร็จแล้ว\n2. ยังไม่เสร็จ',
+  repairIncompleteReason: 'สาเหตุที่ยังไม่เสร็จ',
+  installationDelivered: 'ส่งมอบเครื่องให้ลูกค้าแล้วหรือยัง?\n1. ส่งมอบแล้ว\n2. ยังไม่ส่งมอบ'
+};
 
 const APPROVE_HELP_TEXT =
 `สำหรับหัวหน้าช่าง/แอดมิน พิมพ์เพื่ออนุมัติงาน
@@ -115,6 +143,11 @@ const replyText = async (replyToken, text, attempt = 1) => {
 };
 
 const finishLogin = async (user, lineUserId, replyToken) => {
+  // lineUserId is unique, so switching which account this LINE user is linked
+  // to requires releasing it from whoever held it before, or the save below
+  // fails with a unique-constraint validation error.
+  await User.update({ lineUserId: null }, { where: { lineUserId, id: { [Op.ne]: user.id } } });
+
   user.lineUserId = lineUserId;
   await user.save();
   logger.info(`LINE account linked: ${user.username}`);
@@ -142,13 +175,13 @@ const handleLinkAccount = async (text, lineUserId, replyToken) => {
 const startLoginSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'login', step: 'username', data: {} });
   return replyText(replyToken,
-    `เข้าสู่ระบบ 🔐 (พิมพ์ "ยกเลิก" เพื่อหยุดได้ทุกเมื่อ)\n\n${LOGIN_PROMPTS.username}`);
+    `เข้าสู่ระบบ 🔐 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${LOGIN_PROMPTS.username}`);
 };
 
 const handleLoginStep = async (text, lineUserId, replyToken, session) => {
   const value = text.trim();
 
-  if (CANCEL_KEYWORDS.includes(value)) {
+  if (ABORT_KEYWORDS.includes(value)) {
     lineSession.clear(lineUserId);
     return replyText(replyToken, 'ยกเลิกการเข้าสู่ระบบแล้ว');
   }
@@ -172,7 +205,7 @@ const handleLoginStep = async (text, lineUserId, replyToken, session) => {
 };
 
 // The hospital master list only stores a short name (e.g. "ท่าวังผ่า") and
-// province, so "ลูกค้า" typed in the LINE message is matched against it to
+// address, so "ลูกค้า" typed in the LINE message is matched against it to
 // fill in "สถานที่" automatically when the technician leaves it out.
 const findHospitalMatch = async (customerName) => {
   const cleaned = customerName.replace(/^รพ\.?\s*/, '').trim();
@@ -214,7 +247,7 @@ const handleAddJob = async (text, technician, replyToken) => {
       return replyText(replyToken,
         `ไม่พบ "${result.data.customerName}" ในฐานข้อมูลโรงพยาบาล กรุณาระบุ "สถานที่:" เพิ่มด้วย`);
     }
-    result.data.customerLocation = `จังหวัด${hospital.province}`;
+    result.data.customerLocation = hospital.address;
   }
 
   return finishAddJob(technician, result.data, replyToken);
@@ -224,13 +257,13 @@ const handleAddJob = async (text, technician, replyToken) => {
 const startAddJobSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'addJob', step: 'customerName', data: {} });
   return replyText(replyToken,
-    `เริ่มเพิ่มงานใหม่ ✏️ (พิมพ์ "ยกเลิก" เพื่อหยุดได้ทุกเมื่อ)\n\n${ADD_JOB_PROMPTS.customerName}`);
+    `เริ่มเพิ่มงานใหม่ ✏️ (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${ADD_JOB_PROMPTS.customerName}`);
 };
 
 const handleAddJobStep = async (text, technician, lineUserId, replyToken, session) => {
   const value = text.trim();
 
-  if (CANCEL_KEYWORDS.includes(value)) {
+  if (ABORT_KEYWORDS.includes(value)) {
     lineSession.clear(lineUserId);
     return replyText(replyToken, 'ยกเลิกการเพิ่มงานแล้ว');
   }
@@ -241,7 +274,7 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
     data.customerName = value;
     const hospital = await findHospitalMatch(value);
     if (hospital) {
-      data.customerLocation = `จังหวัด${hospital.province}`;
+      data.customerLocation = hospital.address;
       lineSession.set(lineUserId, { flow: 'addJob', step: 'workType', data });
       return replyText(replyToken, `เติมสถานที่ให้อัตโนมัติ: ${data.customerLocation}\n\n${ADD_JOB_PROMPTS.workType}`);
     }
@@ -307,6 +340,267 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
   return finishAddJob(technician, data, replyToken);
 };
 
+// Shown once a job is found by SR number, so the technician can confirm it's
+// the right job (same customer + site) before continuing the flow.
+const orderSummaryLines = (order) =>
+  `เลขที่: ${order.srNumber}\nลูกค้า: ${order.customerName}\nสถานที่: ${order.customerLocation}`;
+
+const startRescheduleSession = (lineUserId, replyToken) => {
+  lineSession.set(lineUserId, { flow: 'reschedule', step: 'srNumber', data: {} });
+  return replyText(replyToken,
+    `เลื่อนงาน 🔄 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${RESCHEDULE_PROMPTS.srNumber}`);
+};
+
+const handleRescheduleStep = async (text, technician, lineUserId, replyToken, session) => {
+  const value = text.trim();
+
+  if (ABORT_KEYWORDS.includes(value)) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, 'ยกเลิกการเลื่อนงานแล้ว');
+  }
+
+  const { step, data } = session;
+
+  if (step === 'srNumber') {
+    const order = await WorkOrder.findOne({ where: { srNumber: value } });
+    if (!order) {
+      return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
+    }
+    const isOwner = order.technicianId === technician.id;
+    if (!isOwner && technician.role !== 'admin') {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, 'คุณไม่มีสิทธิเลื่อนงานนี้');
+    }
+    if (!RESCHEDULABLE_STATUSES.includes(order.status)) {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, `งาน ${value} มีสถานะ "${order.status}" ไม่สามารถเลื่อนได้`);
+    }
+    data.orderId = order.id;
+    lineSession.set(lineUserId, { flow: 'reschedule', step: 'newDate', data });
+    return replyText(replyToken,
+      `${orderSummaryLines(order)}\nวันที่เดิม: ${new Date(order.plannedDate).toLocaleDateString('th-TH')}\n\n${RESCHEDULE_PROMPTS.newDate}`);
+  }
+
+  if (step === 'newDate') {
+    const date = parseThaiDate(value);
+    if (!date) {
+      return replyText(replyToken, 'รูปแบบวันที่ไม่ถูกต้อง ลองใหม่ (วว/ดด/ปปปป) เช่น 20/09/2026');
+    }
+    data.newDate = date;
+    lineSession.set(lineUserId, { flow: 'reschedule', step: 'reason', data });
+    return replyText(replyToken, RESCHEDULE_PROMPTS.reason);
+  }
+
+  // step === 'reason'
+  lineSession.clear(lineUserId);
+  const order = await WorkOrder.findByPk(data.orderId);
+  if (!order) {
+    return replyText(replyToken, 'ไม่พบงานนี้แล้ว (อาจถูกลบไปแล้ว)');
+  }
+  await rescheduleWorkOrder(order, {
+    newDate: data.newDate, reason: value, changedById: technician.id, changedByName: technician.fullName, actorLabel: technician.username
+  });
+  return replyText(replyToken,
+    `เลื่อนงาน ${order.srNumber} สำเร็จ ✅\nวันที่ใหม่: ${data.newDate.toLocaleDateString('th-TH')}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
+};
+
+const startCancelJobSession = (lineUserId, replyToken) => {
+  lineSession.set(lineUserId, { flow: 'cancelJob', step: 'srNumber', data: {} });
+  return replyText(replyToken,
+    `ยกเลิกงาน 🚫 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${CANCEL_JOB_PROMPTS.srNumber}`);
+};
+
+const handleCancelJobStep = async (text, technician, lineUserId, replyToken, session) => {
+  const value = text.trim();
+
+  if (ABORT_KEYWORDS.includes(value)) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, 'ออกจากขั้นตอนยกเลิกงานแล้ว');
+  }
+
+  const { step, data } = session;
+
+  if (step === 'srNumber') {
+    const order = await WorkOrder.findOne({ where: { srNumber: value }, include: [{ model: User, as: 'technician' }] });
+    if (!order) {
+      return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
+    }
+    const isOwner = order.technicianId === technician.id;
+    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    if (!isOwner && !isSupervisor) {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, 'คุณไม่มีสิทธิยกเลิกงานนี้');
+    }
+    if (!CANCELLABLE_STATUSES.includes(order.status)) {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, `งาน ${value} มีสถานะ "${order.status}" ไม่สามารถยกเลิกได้`);
+    }
+    data.orderId = order.id;
+    data.isOwner = isOwner;
+    data.isSupervisor = isSupervisor;
+    lineSession.set(lineUserId, { flow: 'cancelJob', step: 'reason', data });
+    return replyText(replyToken, `${orderSummaryLines(order)}\n\n${CANCEL_JOB_PROMPTS.reason}`);
+  }
+
+  // step === 'reason'
+  lineSession.clear(lineUserId);
+  const order = await WorkOrder.findByPk(data.orderId, { include: [{ model: User, as: 'technician' }] });
+  if (!order) {
+    return replyText(replyToken, 'ไม่พบงานนี้แล้ว (อาจถูกลบไปแล้ว)');
+  }
+  try {
+    await cancelWorkOrder(order, {
+      cancelReason: value, cancelledById: technician.id,
+      isOwnerCancelling: data.isOwner, isSupervisorCancelling: data.isSupervisor, actorLabel: technician.username
+    });
+  } catch (error) {
+    return replyText(replyToken, error.message);
+  }
+  return replyText(replyToken, `ยกเลิกงาน ${order.srNumber} สำเร็จ ✅`);
+};
+
+const startActualSession = (lineUserId, replyToken) => {
+  lineSession.set(lineUserId, { flow: 'actual', step: 'srNumber', data: {} });
+  return replyText(replyToken,
+    `บันทึกงานจริง 📝 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${ACTUAL_PROMPTS.srNumber}`);
+};
+
+const finishActualWork = async (lineUserId, technician, data, replyToken) => {
+  lineSession.clear(lineUserId);
+  const order = await WorkOrder.findByPk(data.orderId);
+  if (!order) {
+    return replyText(replyToken, 'ไม่พบงานนี้แล้ว (อาจถูกลบไปแล้ว)');
+  }
+
+  try {
+    await logActualWork(order, {
+      actualDate: data.actualDate,
+      actualStartTime: data.actualStartTime,
+      actualEndTime: data.actualEndTime,
+      actualLocation: data.actualLocation,
+      actualDescription: data.actualDescription,
+      repairCompleted: data.repairCompleted,
+      repairIncompleteReason: data.repairIncompleteReason,
+      installationDelivered: data.installationDelivered,
+      recordedById: technician.id,
+      actorLabel: technician.username
+    });
+  } catch (error) {
+    return replyText(replyToken, error.message);
+  }
+
+  const statusLabel = order.status === 'completed' ? 'เสร็จสิ้น ✅' : 'อนุมัติแล้ว (ยังไม่เสร็จ)';
+  return replyText(replyToken, `บันทึกงานจริง ${order.srNumber} สำเร็จ ✅\nสถานะ: ${statusLabel}`);
+};
+
+const handleActualStep = async (text, technician, lineUserId, replyToken, session) => {
+  const value = text.trim();
+
+  if (ABORT_KEYWORDS.includes(value)) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, 'ยกเลิกการบันทึกงานจริงแล้ว');
+  }
+
+  const { step, data } = session;
+
+  if (step === 'srNumber') {
+    const order = await WorkOrder.findOne({ where: { srNumber: value } });
+    if (!order) {
+      return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
+    }
+    const isOwner = order.technicianId === technician.id;
+    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    if (!isOwner && !isSupervisor) {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, 'คุณไม่มีสิทธิบันทึกงานนี้');
+    }
+    if (order.status !== 'approved') {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, `งาน ${value} มีสถานะ "${order.status}" ไม่สามารถบันทึกงานจริงได้ (ต้องเป็นสถานะ "อนุมัติแล้ว")`);
+    }
+    data.orderId = order.id;
+    data.workType = order.workType;
+    data.customerLocation = order.customerLocation;
+    lineSession.set(lineUserId, { flow: 'actual', step: 'actualDate', data });
+    return replyText(replyToken, `${orderSummaryLines(order)}\n\n${ACTUAL_PROMPTS.actualDate}`);
+  }
+
+  if (step === 'actualDate') {
+    const date = parseThaiDate(value);
+    if (!date) {
+      return replyText(replyToken, 'รูปแบบวันที่ไม่ถูกต้อง ลองใหม่ (วว/ดด/ปปปป) เช่น 20/09/2026');
+    }
+    data.actualDate = date;
+    lineSession.set(lineUserId, { flow: 'actual', step: 'actualTime', data });
+    return replyText(replyToken, ACTUAL_PROMPTS.actualTime);
+  }
+
+  if (step === 'actualTime') {
+    const range = parseTimeRange(value);
+    if (!range) {
+      return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง กรุณาระบุ (HH:MM-HH:MM) เช่น 09:00-12:00');
+    }
+    data.actualStartTime = range.start;
+    data.actualEndTime = range.end;
+    lineSession.set(lineUserId, { flow: 'actual', step: 'actualLocation', data });
+
+    // Show the location already on file so the technician can just confirm it
+    // (พิมพ์ ข้าม) instead of retyping the same address, but still let them
+    // override it with a new one if the actual site differed from the plan.
+    const prompt = data.customerLocation
+      ? `${ACTUAL_PROMPTS.actualLocation}\nค่าปัจจุบัน: ${data.customerLocation}\n(พิมพ์ ข้าม เพื่อใช้ค่าเดิม หรือพิมพ์สถานที่ใหม่)`
+      : ACTUAL_PROMPTS.actualLocation;
+    return replyText(replyToken, prompt);
+  }
+
+  if (step === 'actualLocation') {
+    data.actualLocation = (isSkip(value) && data.customerLocation) ? data.customerLocation : value;
+    lineSession.set(lineUserId, { flow: 'actual', step: 'actualDescription', data });
+    return replyText(replyToken, ACTUAL_PROMPTS.actualDescription);
+  }
+
+  if (step === 'actualDescription') {
+    data.actualDescription = value;
+    if (data.workType === 'ซ่อม') {
+      lineSession.set(lineUserId, { flow: 'actual', step: 'repairCompleted', data });
+      return replyText(replyToken, ACTUAL_PROMPTS.repairCompleted);
+    }
+    if (data.workType === 'ติดตั้ง') {
+      lineSession.set(lineUserId, { flow: 'actual', step: 'installationDelivered', data });
+      return replyText(replyToken, ACTUAL_PROMPTS.installationDelivered);
+    }
+    return finishActualWork(lineUserId, technician, data, replyToken);
+  }
+
+  if (step === 'repairCompleted') {
+    if (value === '1') {
+      data.repairCompleted = true;
+      return finishActualWork(lineUserId, technician, data, replyToken);
+    }
+    if (value === '2') {
+      data.repairCompleted = false;
+      lineSession.set(lineUserId, { flow: 'actual', step: 'repairIncompleteReason', data });
+      return replyText(replyToken, ACTUAL_PROMPTS.repairIncompleteReason);
+    }
+    return replyText(replyToken, `เลือกไม่ถูกต้อง กรุณาพิมพ์ 1 หรือ 2\n\n${ACTUAL_PROMPTS.repairCompleted}`);
+  }
+
+  if (step === 'repairIncompleteReason') {
+    data.repairIncompleteReason = value;
+    return finishActualWork(lineUserId, technician, data, replyToken);
+  }
+
+  // step === 'installationDelivered'
+  if (value === '1') {
+    data.installationDelivered = true;
+  } else if (value === '2') {
+    data.installationDelivered = false;
+  } else {
+    return replyText(replyToken, `เลือกไม่ถูกต้อง กรุณาพิมพ์ 1 หรือ 2\n\n${ACTUAL_PROMPTS.installationDelivered}`);
+  }
+  return finishActualWork(lineUserId, technician, data, replyToken);
+};
+
 const handleApprove = async (text, approver, replyToken) => {
   if (!['supervisor', 'admin'].includes(approver.role)) {
     return replyText(replyToken, 'คำสั่งนี้ใช้ได้เฉพาะหัวหน้าช่าง/แอดมินเท่านั้น');
@@ -324,21 +618,9 @@ const handleApprove = async (text, approver, replyToken) => {
     return replyText(replyToken, `งาน ${srNumber} ไม่ได้อยู่ในสถานะรออนุมัติ (สถานะปัจจุบัน: ${order.status})`);
   }
 
-  order.status = 'approved';
-  order.approvedById = approver.id;
-  order.approvedAt = new Date();
-  if (approvalNote) order.approvalNote = approvalNote;
-  await order.save();
-
-  await Notification.create({
-    recipientId: order.technicianId,
-    type: 'approval_needed',
-    title: '✅ แผนงานได้รับการอนุมัติ',
-    message: `งาน ${order.srNumber} (${order.customerName}) ได้รับการอนุมัติแล้ว`,
-    relatedWorkOrderId: order.id
+  await approveWorkOrder(order, {
+    approvedById: approver.id, approvedByName: approver.fullName, approvalNote, actorLabel: `${approver.username} (LINE)`
   });
-
-  logger.info(`Work order approved via LINE: ${order.srNumber} by ${approver.username}`);
   return replyText(replyToken, `อนุมัติงาน ${srNumber} สำเร็จ ✅\nลูกค้า: ${order.customerName}`);
 };
 
@@ -388,9 +670,27 @@ router.post('/webhook', async (req, res) => {
       if (session && session.flow === 'addJob') {
         logger.info(`LINE webhook: handling add-job step "${session.step}" from ${technician.username}`);
         await handleAddJobStep(text, technician, lineUserId, replyToken, session);
+      } else if (session && session.flow === 'reschedule') {
+        logger.info(`LINE webhook: handling reschedule step "${session.step}" from ${technician.username}`);
+        await handleRescheduleStep(text, technician, lineUserId, replyToken, session);
+      } else if (session && session.flow === 'cancelJob') {
+        logger.info(`LINE webhook: handling cancel-job step "${session.step}" from ${technician.username}`);
+        await handleCancelJobStep(text, technician, lineUserId, replyToken, session);
+      } else if (session && session.flow === 'actual') {
+        logger.info(`LINE webhook: handling actual-work step "${session.step}" from ${technician.username}`);
+        await handleActualStep(text, technician, lineUserId, replyToken, session);
       } else if (text === 'เพิ่มงาน') {
         logger.info(`LINE webhook: starting add-job session for ${technician.username}`);
         await startAddJobSession(lineUserId, replyToken);
+      } else if (text === 'เลื่อนงาน') {
+        logger.info(`LINE webhook: starting reschedule session for ${technician.username}`);
+        await startRescheduleSession(lineUserId, replyToken);
+      } else if (text === 'ยกเลิกงาน') {
+        logger.info(`LINE webhook: starting cancel-job session for ${technician.username}`);
+        await startCancelJobSession(lineUserId, replyToken);
+      } else if (text === 'บันทึกงานจริง') {
+        logger.info(`LINE webhook: starting actual-work session for ${technician.username}`);
+        await startActualSession(lineUserId, replyToken);
       } else if (isAddJobMessage(text)) {
         logger.info(`LINE webhook: handling one-shot add-job message from ${technician.username}`);
         await handleAddJob(text, technician, replyToken);

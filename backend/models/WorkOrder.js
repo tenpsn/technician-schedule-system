@@ -57,6 +57,24 @@ const WorkOrder = sequelize.define('WorkOrder', {
   actualLocation: DataTypes.STRING,
   actualDescription: DataTypes.TEXT,
 
+  // workType === 'ซ่อม' only: whether the repair was finished, and why not if it wasn't
+  repairCompleted: DataTypes.BOOLEAN,
+  repairIncompleteReason: DataTypes.TEXT,
+
+  // workType === 'ติดตั้ง' only: whether the equipment has been handed over to the customer
+  installationDelivered: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+
+  // Every "log actual work" submission is appended here (a repair/installation may need
+  // several visits before it's finished), newest last. actualDate/actualStartTime/etc.
+  // above always mirror the latest entry.
+  actualLog: {
+    type: DataTypes.JSONB,
+    defaultValue: []
+  },
+
   // Status workflow
   status: {
     type: DataTypes.ENUM('draft', 'pending_approval', 'approved', 'in_progress',
@@ -64,13 +82,18 @@ const WorkOrder = sequelize.define('WorkOrder', {
     defaultValue: 'draft'
   },
 
-  // Approval
+  // Approval — approvedById/approvedAt/approvalNote always mirror the latest
+  // entry in approvalHistory (a job can be re-approved after each reschedule).
   approvedById: {
     type: DataTypes.UUID,
     references: { model: User, key: 'id' }
   },
   approvedAt: DataTypes.DATE,
   approvalNote: DataTypes.TEXT,
+  approvalHistory: {
+    type: DataTypes.JSONB,
+    defaultValue: []
+  },
 
   // Reschedule tracking
   rescheduleHistory: {

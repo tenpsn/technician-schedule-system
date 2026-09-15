@@ -28,17 +28,42 @@ router.get('/', protect, async (req, res) => {
 // Add a new hospital (Supervisor/Admin only)
 router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
-    const { name, province } = req.body;
+    const { name, address } = req.body;
 
-    if (!name || !province) {
-      return res.status(400).json({ message: 'กรุณากรอกชื่อโรงพยาบาลและจังหวัด' });
+    if (!name || !address) {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อโรงพยาบาลและที่อยู่' });
     }
 
-    const hospital = await Hospital.create({ name: name.trim(), province: province.trim() });
-    logger.info(`Hospital added: ${hospital.name} (${hospital.province})`);
+    const hospital = await Hospital.create({ name: name.trim(), address: address.trim() });
+    logger.info(`Hospital added: ${hospital.name} (${hospital.address})`);
     res.status(201).json(hospital);
   } catch (error) {
     logger.error(`Create hospital error: ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Edit a hospital (Supervisor/Admin only)
+router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res) => {
+  try {
+    const { name, address } = req.body;
+
+    if (!name || !address) {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อโรงพยาบาลและที่อยู่' });
+    }
+
+    const hospital = await Hospital.findByPk(req.params.id);
+    if (!hospital) {
+      return res.status(404).json({ message: 'ไม่พบโรงพยาบาลนี้' });
+    }
+
+    hospital.name = name.trim();
+    hospital.address = address.trim();
+    await hospital.save();
+    logger.info(`Hospital updated: ${hospital.name} (${hospital.address})`);
+    res.json(hospital);
+  } catch (error) {
+    logger.error(`Update hospital error: ${error.message}`);
     res.status(500).json({ message: error.message });
   }
 });

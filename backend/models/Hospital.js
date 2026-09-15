@@ -11,7 +11,7 @@ const Hospital = sequelize.define('Hospital', {
     type: DataTypes.STRING,
     allowNull: false
   },
-  province: {
+  address: {
     type: DataTypes.STRING,
     allowNull: false
   }

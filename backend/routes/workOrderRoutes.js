@@ -1,10 +1,9 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const WorkOrder = require('../models/WorkOrder');
-const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
-const { createWorkOrder } = require('../services/workOrderService');
+const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork } = require('../services/workOrderService');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -146,29 +145,16 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
       return res.status(404).json({ message: 'Work order not found' });
     }
 
-    if (order.status !== 'pending_approval') {
-      return res.status(400).json({ message: 'Work order is not pending approval' });
-    }
-
-    order.status = 'approved';
-    order.approvedById = req.user.id;
-    order.approvedAt = new Date();
-    if (approvalNote) order.approvalNote = approvalNote;
-    await order.save();
+    await approveWorkOrder(order, {
+      approvedById: req.user.id, approvedByName: req.user.fullName, approvalNote, actorLabel: req.user.username
+    });
     await order.reload({ include: DETAIL_INCLUDE });
 
-    // Notify technician
-    await Notification.create({
-      recipientId: order.technicianId,
-      type: 'approval_needed',
-      title: '✅ แผนงานได้รับการอนุมัติ',
-      message: `งาน ${order.srNumber} (${order.customerName}) ได้รับการอนุมัติแล้ว`,
-      relatedWorkOrderId: order.id
-    });
-
-    logger.info(`Work order approved: ${order.srNumber} by ${req.user.username}`);
     res.json(order);
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     logger.error(`Approve error: ${error.message}`);
     res.status(500).json({ message: error.message });
   }
@@ -178,11 +164,8 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
 router.patch('/:id/actual', protect, async (req, res) => {
   try {
     const { actualDate, actualStartTime, actualEndTime,
-            actualLocation, actualDescription } = req.body;
-
-    if (!actualDescription) {
-      return res.status(400).json({ message: 'Actual description is required' });
-    }
+            actualLocation, actualDescription,
+            repairCompleted, repairIncompleteReason, installationDelivered } = req.body;
 
     const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
@@ -198,17 +181,17 @@ router.patch('/:id/actual', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    order.actualDate = actualDate;
-    order.actualStartTime = actualStartTime;
-    order.actualEndTime = actualEndTime;
-    order.actualLocation = actualLocation;
-    order.actualDescription = actualDescription;
-    order.status = 'completed';
-    await order.save();
+    await logActualWork(order, {
+      actualDate, actualStartTime, actualEndTime, actualLocation, actualDescription,
+      repairCompleted, repairIncompleteReason, installationDelivered,
+      recordedById: req.user.id, actorLabel: req.user.username
+    });
 
-    logger.info(`Work order completed: ${order.srNumber} by ${req.user.username}`);
     res.json(order);
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     logger.error(`Update actual error: ${error.message}`);
     res.status(500).json({ message: error.message });
   }
@@ -235,37 +218,10 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to reschedule' });
     }
 
-    // Add to history
-    const fromDate = order.plannedDate;
-    const history = [...(order.rescheduleHistory || []), {
-      fromDate,
-      toDate: new Date(newDate),
-      reason,
-      changedBy: req.user.id,
-      changedAt: new Date()
-    }];
-    order.rescheduleHistory = history;
-    order.changed('rescheduleHistory', true);
+    await rescheduleWorkOrder(order, {
+      newDate, reason, changedById: req.user.id, changedByName: req.user.fullName, actorLabel: req.user.username
+    });
 
-    order.plannedDate = new Date(newDate);
-    order.status = 'pending_approval';
-    order.isOverdue = false;
-    order.overdueDays = 0;
-    await order.save();
-
-    // Notify supervisor
-    const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
-    for (const sup of supervisors) {
-      await Notification.create({
-        recipientId: sup.id,
-        type: 'rescheduled',
-        title: '🔄 งานถูกเลื่อน',
-        message: `งาน ${order.srNumber} เลื่อนจาก ${new Date(fromDate).toLocaleDateString()} เป็น ${newDate}\nเหตุผล: ${reason}`,
-        relatedWorkOrderId: order.id
-      });
-    }
-
-    logger.info(`Work order rescheduled: ${order.srNumber} to ${newDate}`);
     res.json(order);
   } catch (error) {
     logger.error(`Reschedule error: ${error.message}`);
@@ -289,14 +245,6 @@ router.patch('/:id/cancel', protect, async (req, res) => {
       return res.status(404).json({ message: 'ไม่พบงาน' });
     }
 
-    // Check if can be cancelled
-    const cancellableStatuses = ['draft', 'pending_approval', 'approved', 'overdue', 'in_progress'];
-    if (!cancellableStatuses.includes(order.status)) {
-      return res.status(400).json({
-        message: `ไม่สามารถยกเลิกงานที่มีสถานะ "${order.status}" ได้`
-      });
-    }
-
     // Check permission: owner or supervisor/admin
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
@@ -305,39 +253,10 @@ router.patch('/:id/cancel', protect, async (req, res) => {
       return res.status(403).json({ message: 'ไม่มีสิทธิยกเลิกงานนี้' });
     }
 
-    // Update order
-    order.status = 'cancelled';
-    order.cancelledById = req.user.id;
-    order.cancelledAt = new Date();
-    order.cancelReason = cancelReason.trim();
-    await order.save();
-
-    // Log the cancellation
-    logger.info(`Work order cancelled: ${order.srNumber} by ${req.user.username}. Reason: ${cancelReason}`);
-
-    // Notify relevant parties
-    if (!isOwner) {
-      // Supervisor cancelled - notify technician
-      await Notification.create({
-        recipientId: order.technicianId,
-        type: 'cancelled',
-        title: '🚫 งานถูกยกเลิกโดยหัวหน้า',
-        message: `งาน ${order.srNumber} (${order.customerName}) ถูกยกเลิก\nเหตุผล: ${cancelReason}`,
-        relatedWorkOrderId: order.id
-      });
-    } else if (!isSupervisor) {
-      // Technician cancelled - notify supervisors
-      const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
-      for (const sup of supervisors) {
-        await Notification.create({
-          recipientId: sup.id,
-          type: 'cancelled',
-          title: '🚫 ช่างขอยกเลิกงาน',
-          message: `${order.technician.fullName} ยกเลิกงาน ${order.srNumber} (${order.customerName})\nเหตุผล: ${cancelReason}`,
-          relatedWorkOrderId: order.id
-        });
-      }
-    }
+    await cancelWorkOrder(order, {
+      cancelReason, cancelledById: req.user.id,
+      isOwnerCancelling: isOwner, isSupervisorCancelling: isSupervisor, actorLabel: req.user.username
+    });
 
     await order.reload({ include: DETAIL_INCLUDE });
 
@@ -347,6 +266,9 @@ router.patch('/:id/cancel', protect, async (req, res) => {
       order
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     logger.error(`Cancel work order error: ${error.message}`);
     res.status(500).json({ message: error.message });
   }
