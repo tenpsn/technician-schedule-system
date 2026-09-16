@@ -8,6 +8,7 @@ export interface Hospital {
   _id: string;
   name: string;
   address: string;
+  facilityCode?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -34,14 +35,14 @@ export class HospitalService {
     });
   }
 
-  create(name: string, address: string): Observable<Hospital> {
+  create(name: string, address: string, facilityCode?: string): Observable<Hospital> {
     return this.http.post<Hospital>(`${environment.apiUrl}/hospitals`,
-      { name, address }, { headers: this.getHeaders() });
+      { name, address, facilityCode }, { headers: this.getHeaders() });
   }
 
-  update(id: string, name: string, address: string): Observable<Hospital> {
+  update(id: string, name: string, address: string, facilityCode?: string): Observable<Hospital> {
     return this.http.patch<Hospital>(`${environment.apiUrl}/hospitals/${id}`,
-      { name, address }, { headers: this.getHeaders() });
+      { name, address, facilityCode }, { headers: this.getHeaders() });
   }
 
   delete(id: string): Observable<any> {

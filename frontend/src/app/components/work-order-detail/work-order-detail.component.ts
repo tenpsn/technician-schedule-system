@@ -321,7 +321,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .modal-card {
       border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; scrollbar-gutter: stable;
       background: var(--surface); border: 1px solid var(--line); padding: 22px;
-      animation: modalIn .2s ease both;
+      animation: modalIn .2s ease backwards;
     }
     .modal-card-narrow { max-width: 460px; }
     .modal-icon-row { display: flex; align-items: center; gap: 12px; }

@@ -17,6 +17,7 @@ import { WorkOrderDetailComponent } from './components/work-order-detail/work-or
 import { CancelledOrdersComponent } from './components/cancelled-orders/cancelled-orders.component';
 import { TechDashboardComponent } from './components/tech-dashboard/tech-dashboard.component';
 import { HospitalSettingsComponent } from './components/hospital-settings/hospital-settings.component';
+import { ContractSettingsComponent } from './components/contract-settings/contract-settings.component';
 import { UserSettingsComponent } from './components/user-settings/user-settings.component';
 import { ProfileComponent } from './components/profile/profile.component';
 import { DatePickerComponent } from './components/date-picker/date-picker.component';
@@ -34,6 +35,7 @@ import { LocalDatePipe } from './pipes/local-date.pipe';
     CancelledOrdersComponent,
     TechDashboardComponent,
     HospitalSettingsComponent,
+    ContractSettingsComponent,
     UserSettingsComponent,
     ProfileComponent,
     DatePickerComponent,

@@ -148,7 +148,7 @@ import { SelectOption } from '../select/select.component';
     .btn-activate:hover { filter: brightness(1.07); }
 
     .modal-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62); display: flex; align-items: center; justify-content: center; padding: 18px; animation: veilIn .16s ease both; }
-    .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease both; }
+    .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease backwards; }
     .modal-title { font-size: 18px; font-weight: 700; }
     .modal-body { margin-top: 10px; font-size: 14px; color: var(--ink); }
     .modal-actions { display: flex; gap: 10px; margin-top: 20px; }

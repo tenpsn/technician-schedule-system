@@ -14,6 +14,10 @@ const Hospital = sequelize.define('Hospital', {
   address: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  facilityCode: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
   tableName: 'hospitals',

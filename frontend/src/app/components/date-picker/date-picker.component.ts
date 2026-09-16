@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, Input, forwardRef } from '@angular/core';
+import { Component, ElementRef, HostListener, Input, OnDestroy, forwardRef } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { I18nService } from '../../services/i18n.service';
 
@@ -19,10 +19,17 @@ function pad(n: number): string {
         <span class="dp-icon">📅</span>
       </button>
 
-      <div class="dp-panel" *ngIf="open">
+      <div class="dp-panel" *ngIf="open" [style.top.px]="panelTop" [style.left.px]="panelLeft">
         <div class="dp-panel-head">
           <button type="button" class="dp-nav" (click)="prevMonth(); $event.stopPropagation()">‹</button>
-          <div class="dp-title mono">{{ monthLabel }}</div>
+          <div class="dp-title-selects">
+            <select class="dp-select" [ngModel]="viewMonth" (ngModelChange)="viewMonth = $event" (click)="$event.stopPropagation()">
+              <option *ngFor="let m of monthOptions" [ngValue]="m.value">{{ m.label }}</option>
+            </select>
+            <select class="dp-select" [ngModel]="viewYear" (ngModelChange)="viewYear = $event" (click)="$event.stopPropagation()">
+              <option *ngFor="let y of yearOptions" [ngValue]="y.value">{{ y.label }}</option>
+            </select>
+          </div>
           <button type="button" class="dp-nav" (click)="nextMonth(); $event.stopPropagation()">›</button>
         </div>
         <div class="dp-dow-row">
@@ -57,7 +64,7 @@ function pad(n: number): string {
     .dp-icon { font-size: 13px; flex: none; }
 
     .dp-panel {
-      position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 280px;
+      position: fixed; z-index: 30; width: 300px;
       background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 12px; box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26);
       animation: modalIn .16s ease both;
@@ -68,7 +75,12 @@ function pad(n: number): string {
       color: var(--sub); font-size: 15px;
     }
     .dp-nav:hover { border-color: var(--accent); color: var(--accent); }
-    .dp-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+    .dp-title-selects { display: flex; gap: 4px; flex: 1; min-width: 0; }
+    .dp-select {
+      flex: 1 1 0; min-width: 0; height: 30px; padding: 0 2px; border-radius: 8px; border: 1px solid var(--line);
+      background: var(--surface); color: var(--ink); font-size: 11.5px; font-family: inherit; cursor: pointer;
+    }
+    .dp-select:focus { border-color: var(--accent); }
 
     .dp-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 10px; }
     .dp-dow { text-align: center; font-size: 10.5px; color: var(--sub); padding: 4px 0; }
@@ -87,7 +99,7 @@ function pad(n: number): string {
     .dp-today-btn { border: none; background: transparent; color: var(--accent); font-size: 12.5px; font-weight: 600; }
   `]
 })
-export class DatePickerComponent implements ControlValueAccessor {
+export class DatePickerComponent implements ControlValueAccessor, OnDestroy {
   @Input() placeholder = '';
 
   open = false;
@@ -96,13 +108,23 @@ export class DatePickerComponent implements ControlValueAccessor {
   viewYear: number;
   viewMonth: number;
   today = new Date();
+  panelTop = 0;
+  panelLeft = 0;
 
   private onChange: (value: string) => void = () => {};
   private onTouched: () => void = () => {};
+  // Capture-phase so a scroll inside any ancestor (e.g. a scrollable modal list)
+  // closes the panel too — scroll events don't bubble, only capture.
+  private closeOnScroll = () => { if (this.open) this.open = false; };
 
   constructor(public i18n: I18nService, private elementRef: ElementRef) {
     this.viewYear = this.today.getFullYear();
     this.viewMonth = this.today.getMonth();
+    document.addEventListener('scroll', this.closeOnScroll, true);
+  }
+
+  ngOnDestroy(): void {
+    document.removeEventListener('scroll', this.closeOnScroll, true);
   }
 
   @HostListener('document:click', ['$event'])
@@ -123,6 +145,21 @@ export class DatePickerComponent implements ControlValueAccessor {
 
   get monthLabel(): string {
     return new Date(this.viewYear, this.viewMonth, 1).toLocaleDateString(this.locale, { month: 'long', year: 'numeric' });
+  }
+
+  get monthOptions(): { value: number; label: string }[] {
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: i,
+      label: new Date(2023, i, 1).toLocaleDateString(this.locale, { month: 'long' })
+    }));
+  }
+
+  get yearOptions(): { value: number; label: string }[] {
+    const years: { value: number; label: string }[] = [];
+    for (let y = this.viewYear - 10; y <= this.viewYear + 10; y++) {
+      years.push({ value: y, label: this.i18n.lang === 'th' ? String(y + 543) : String(y) });
+    }
+    return years;
   }
 
   get dowLabels(): string[] {
@@ -171,7 +208,34 @@ export class DatePickerComponent implements ControlValueAccessor {
       const base = this.selected || this.today;
       this.viewYear = base.getFullYear();
       this.viewMonth = base.getMonth();
+      this.positionPanel();
     }
+  }
+
+  // The panel is position:fixed so it can escape any scrollable ancestor (a
+  // long list in a modal, say) without being clipped — so its coordinates are
+  // computed from the toggle button's own on-screen position, clamped to the
+  // viewport instead of assumed to fit just below/left of the field.
+  private positionPanel() {
+    const fieldEl = this.elementRef.nativeElement.querySelector('.dp-field') as HTMLElement;
+    const rect = fieldEl.getBoundingClientRect();
+    const panelWidth = 300;
+    const estimatedHeight = 340;
+    const margin = 6;
+    const edgeGap = 12;
+
+    let left = rect.left;
+    left = Math.min(left, window.innerWidth - panelWidth - edgeGap);
+    left = Math.max(edgeGap, left);
+
+    let top = rect.bottom + margin;
+    if (top + estimatedHeight > window.innerHeight - edgeGap) {
+      top = rect.top - estimatedHeight - margin;
+    }
+    top = Math.max(edgeGap, top);
+
+    this.panelLeft = left;
+    this.panelTop = top;
   }
 
   prevMonth() {

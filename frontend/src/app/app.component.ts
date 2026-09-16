@@ -21,10 +21,21 @@ const NOTIF_POLL_MS = 30000;
 
         <nav class="top-nav">
           <a routerLink="/calendar" routerLinkActive="active">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</a>
-          <a routerLink="/work-orders/new" routerLinkActive="active">{{ i18n.t['navAdd'] }}</a>
-          <a *ngIf="auth.isSupervisor" routerLink="/cancelled-orders" routerLinkActive="active">{{ i18n.t['navCancelled'] }}</a>
+          <div class="nav-dropdown" *ngIf="auth.isSupervisor">
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">{{ i18n.t['navJobs'] }}</button>
+            <div class="nav-dropdown-menu" *ngIf="showJobsMenu">
+              <button class="nav-dropdown-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
+              <button class="nav-dropdown-item" *ngIf="auth.isSupervisor" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
+            </div>
+          </div>
           <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">{{ i18n.t['navDashboard'] }}</a>
-          <a *ngIf="auth.isSupervisor" routerLink="/settings/hospitals" routerLinkActive="active">{{ i18n.t['navHospitals'] }}</a>
+          <div class="nav-dropdown" *ngIf="auth.isSupervisor">
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}</button>
+            <div class="nav-dropdown-menu" *ngIf="showCustomerMenu">
+              <button class="nav-dropdown-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
+              <button class="nav-dropdown-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
+            </div>
+          </div>
           <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">{{ i18n.t['navUsers'] }}</a>
         </nav>
 
@@ -92,18 +103,27 @@ const NOTIF_POLL_MS = 30000;
         <a routerLink="/calendar" routerLinkActive="active">
           <span class="glyph">▦</span><span class="label">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</span>
         </a>
-        <a routerLink="/work-orders/new" routerLinkActive="active">
-          <span class="glyph">✚</span><span class="label">{{ i18n.t['navAdd'] }}</span>
-        </a>
-        <a *ngIf="auth.isSupervisor" routerLink="/cancelled-orders" routerLinkActive="active">
-          <span class="glyph">✕</span><span class="label">{{ i18n.t['navCancelled'] }}</span>
-        </a>
+        <div class="bottom-nav-dropdown" *ngIf="auth.isSupervisor">
+          <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">
+            <span class="glyph">✚</span><span class="label">{{ i18n.t['navJobs'] }}</span>
+          </button>
+          <div class="bottom-nav-menu" *ngIf="showJobsMenu">
+            <button class="bottom-nav-menu-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
+            <button class="bottom-nav-menu-item" *ngIf="auth.isSupervisor" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
+          </div>
+        </div>
         <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">
           <span class="glyph">▤</span><span class="label">{{ i18n.t['navDashboard'] }}</span>
         </a>
-        <a *ngIf="auth.isSupervisor" routerLink="/settings/hospitals" routerLinkActive="active">
-          <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}</span>
-        </a>
+        <div class="bottom-nav-dropdown" *ngIf="auth.isSupervisor">
+          <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">
+            <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}</span>
+          </button>
+          <div class="bottom-nav-menu" *ngIf="showCustomerMenu">
+            <button class="bottom-nav-menu-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
+            <button class="bottom-nav-menu-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
+          </div>
+        </div>
         <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">
           <span class="glyph">👤</span><span class="label">{{ i18n.t['navUsers'] }}</span>
         </a>
@@ -141,7 +161,13 @@ const NOTIF_POLL_MS = 30000;
     .brand-name { font-size: 15.5px; font-weight: 700; }
     .brand-sub { font-size: 10px; letter-spacing: 0.16em; color: var(--chrome-sub); }
 
-    .top-nav { display: flex; border-radius: var(--radius); border: 1px solid var(--chrome-line); overflow: hidden; flex: none; }
+    .top-nav { display: flex; border-radius: var(--radius); border: 1px solid var(--chrome-line); flex: none; }
+    .top-nav > a:first-child, .top-nav > .nav-dropdown:first-child .nav-dropdown-toggle {
+      border-top-left-radius: var(--radius); border-bottom-left-radius: var(--radius);
+    }
+    .top-nav > a:last-child, .top-nav > .nav-dropdown:last-child .nav-dropdown-toggle {
+      border-top-right-radius: var(--radius); border-bottom-right-radius: var(--radius);
+    }
     .top-nav a {
       height: 40px; padding: 0 15px; display: flex; align-items: center;
       border-right: 1px solid var(--chrome-line); color: var(--chrome-ink);
@@ -150,6 +176,29 @@ const NOTIF_POLL_MS = 30000;
     .top-nav a:last-child { border-right: none; }
     .top-nav a:hover { filter: brightness(1.15); text-decoration: none; }
     .top-nav a.active { background: var(--accent); color: #fff; }
+
+    .nav-dropdown { position: relative; }
+    .nav-dropdown-toggle {
+      height: 40px; padding: 0 15px; display: flex; align-items: center;
+      border: none; border-right: 1px solid var(--chrome-line); background: transparent;
+      color: var(--chrome-ink); font-size: 13px; font-weight: 600; font-family: inherit;
+      text-decoration: none; cursor: pointer;
+    }
+    .nav-dropdown:last-child .nav-dropdown-toggle { border-right: none; }
+    .nav-dropdown-toggle:hover { filter: brightness(1.15); }
+    .nav-dropdown-toggle.active { background: var(--accent); color: #fff; }
+    .nav-dropdown-menu {
+      position: absolute; top: calc(100% + 12px); left: 0; z-index: 30; min-width: 220px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 6px;
+      box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26); animation: modalIn .16s ease both; overflow: hidden;
+    }
+    .nav-dropdown-item {
+      display: flex; align-items: center; width: 100%; padding: 10px 12px;
+      border-radius: 8px; border: none; background: transparent; color: var(--ink);
+      font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer;
+      text-align: left; font-family: inherit;
+    }
+    .nav-dropdown-item:hover { background: var(--alt); }
 
     .spacer { flex: 1; min-width: 8px; }
 
@@ -251,7 +300,7 @@ const NOTIF_POLL_MS = 30000;
     .modal-card {
       border-radius: 16px; width: 100%; max-width: 440px;
       background: var(--surface); border: 1px solid var(--line); padding: 24px; color: var(--ink);
-      animation: modalIn .2s ease both;
+      animation: modalIn .2s ease backwards;
     }
     .modal-title { font-size: 19px; font-weight: 700; }
     .modal-body { font-size: 14px; color: var(--sub); line-height: 1.65; margin-top: 10px; }
@@ -287,6 +336,27 @@ const NOTIF_POLL_MS = 30000;
       .bottom-nav a .glyph { font-size: 18px; }
       .bottom-nav a .label { font-size: 11px; font-weight: 600; text-align: center; }
       .bottom-nav a.active { color: var(--accent); border-top-color: var(--accent); }
+
+      .bottom-nav-dropdown { position: relative; flex: 1; display: flex; }
+      .bottom-nav-toggle {
+        flex: 1; border: none; border-top: 3px solid transparent; background: transparent;
+        display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+        gap: 4px; color: var(--sub); padding-top: 13px; font-family: inherit; cursor: pointer;
+      }
+      .bottom-nav-toggle .glyph { font-size: 18px; }
+      .bottom-nav-toggle .label { font-size: 11px; font-weight: 600; text-align: center; }
+      .bottom-nav-toggle.active { color: var(--accent); border-top-color: var(--accent); }
+      .bottom-nav-menu {
+        position: fixed; bottom: 82px; left: 50%; margin-left: -110px;
+        width: 220px; max-width: calc(100vw - 24px); background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+        padding: 6px; box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26); animation: modalIn .16s ease both; z-index: 7;
+      }
+      .bottom-nav-menu-item {
+        display: block; width: 100%; padding: 10px 12px; border-radius: 8px; border: none;
+        background: transparent; color: var(--ink); font-size: 13px; font-weight: 600;
+        text-decoration: none; white-space: nowrap; text-align: center; font-family: inherit; cursor: pointer;
+      }
+      .bottom-nav-menu-item:hover { background: var(--alt); }
     }
   `]
 })
@@ -294,9 +364,11 @@ export class AppComponent implements OnInit, OnDestroy {
   showLogoutConfirm = false;
   showNotifications = false;
   showUserMenu = false;
+  showCustomerMenu = false;
+  showJobsMenu = false;
   notifications: AppNotification[] = [];
   unreadCount = 0;
-  private currentUrl: string;
+  currentUrl: string;
   private pollHandle: any;
 
   constructor(
@@ -332,11 +404,55 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.showUserMenu && !target.closest('.user-menu-wrap')) {
       this.showUserMenu = false;
     }
+    if (this.showCustomerMenu && !target.closest('.nav-dropdown') && !target.closest('.bottom-nav-dropdown')) {
+      this.showCustomerMenu = false;
+    }
+    if (this.showJobsMenu && !target.closest('.nav-dropdown') && !target.closest('.bottom-nav-dropdown')) {
+      this.showJobsMenu = false;
+    }
   }
 
   toggleUserMenu() {
     this.showUserMenu = !this.showUserMenu;
     if (this.showUserMenu) this.showNotifications = false;
+  }
+
+  toggleCustomerMenu() {
+    this.showCustomerMenu = !this.showCustomerMenu;
+    if (this.showCustomerMenu) {
+      this.showUserMenu = false;
+      this.showNotifications = false;
+      this.showJobsMenu = false;
+    }
+  }
+
+  toggleJobsMenu() {
+    this.showJobsMenu = !this.showJobsMenu;
+    if (this.showJobsMenu) {
+      this.showUserMenu = false;
+      this.showNotifications = false;
+      this.showCustomerMenu = false;
+    }
+  }
+
+  goToHospitalSettings() {
+    this.showCustomerMenu = false;
+    this.router.navigate(['/settings/hospitals']);
+  }
+
+  goToContracts() {
+    this.showCustomerMenu = false;
+    this.router.navigate(['/settings/contracts']);
+  }
+
+  goToAddWork() {
+    this.showJobsMenu = false;
+    this.router.navigate(['/work-orders/new']);
+  }
+
+  goToCancelledOrders() {
+    this.showJobsMenu = false;
+    this.router.navigate(['/cancelled-orders']);
   }
 
   get showScheduleSearch(): boolean {

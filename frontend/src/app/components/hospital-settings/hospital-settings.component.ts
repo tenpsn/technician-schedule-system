@@ -24,6 +24,10 @@ import { I18nService } from '../../services/i18n.service';
             <span>{{ i18n.t['hospitalAddress'] }} *</span>
             <input formControlName="address" type="text" [placeholder]="i18n.t['hospitalAddressPh']">
           </label>
+          <label class="field">
+            <span>{{ i18n.t['hospitalFacilityCode'] }}</span>
+            <input formControlName="facilityCode" type="text" [placeholder]="i18n.t['hospitalFacilityCodePh']">
+          </label>
           <button type="submit" [disabled]="form.invalid || saving" class="btn-primary">
             + {{ saving ? i18n.t['saving'] : i18n.t['addHospital'] }}
           </button>
@@ -45,20 +49,22 @@ import { I18nService } from '../../services/i18n.service';
               <tr>
                 <th>{{ i18n.t['hospitalName'] }}</th>
                 <th>{{ i18n.t['hospitalAddress'] }}</th>
-                <th></th>
+                <th class="col-code">{{ i18n.t['hospitalFacilityCode'] }}</th>
+                <th class="col-actions"></th>
               </tr>
             </thead>
             <tbody>
               <tr *ngFor="let h of filteredHospitals">
                 <td>{{ h.name }}</td>
                 <td class="muted">{{ h.address }}</td>
+                <td class="muted">{{ h.facilityCode || '-' }}</td>
                 <td class="actions-cell">
                   <button (click)="openEdit(h)" class="btn-edit">{{ i18n.t['edit'] }}</button>
                   <button (click)="confirmDelete(h)" class="btn-delete">{{ i18n.t['delete'] }}</button>
                 </td>
               </tr>
               <tr *ngIf="filteredHospitals.length === 0">
-                <td colspan="3" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="4" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
@@ -87,6 +93,10 @@ import { I18nService } from '../../services/i18n.service';
             <label class="field modal-field">
               <span>{{ i18n.t['hospitalAddress'] }} *</span>
               <input formControlName="address" type="text" [placeholder]="i18n.t['hospitalAddressPh']">
+            </label>
+            <label class="field modal-field">
+              <span>{{ i18n.t['hospitalFacilityCode'] }}</span>
+              <input formControlName="facilityCode" type="text" [placeholder]="i18n.t['hospitalFacilityCodePh']">
             </label>
             <div class="modal-actions">
               <button type="submit" [disabled]="editForm.invalid || editSaving" class="btn-primary">
@@ -125,11 +135,13 @@ import { I18nService } from '../../services/i18n.service';
     .empty-state { text-align: center; padding: 40px 20px; color: var(--sub); }
 
     .table-scroll { overflow-x: auto; }
-    .data-table { width: 100%; min-width: 420px; border-collapse: collapse; }
+    .data-table { width: 100%; min-width: 620px; border-collapse: collapse; }
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 12px 20px; border-bottom: 1px solid var(--line2); font-size: 13.5px; }
     .muted { color: var(--sub); }
-    .actions-cell { text-align: right; padding-right: 20px; }
+    .actions-cell { text-align: right; padding-right: 20px; white-space: nowrap; }
+    .col-code { width: 140px; }
+    .col-actions { width: 170px; }
     .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
     .btn-delete { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--danger-line); background: var(--danger-bg); color: var(--danger-text); font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn-delete:hover { filter: brightness(1.07); }
@@ -137,7 +149,7 @@ import { I18nService } from '../../services/i18n.service';
     .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
 
     .modal-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62); display: flex; align-items: center; justify-content: center; padding: 18px; animation: veilIn .16s ease both; }
-    .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease both; }
+    .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease backwards; }
     .modal-title { font-size: 18px; font-weight: 700; }
     .modal-body { margin-top: 10px; font-size: 14px; color: var(--ink); }
     .modal-field { margin-top: 16px; }
@@ -173,11 +185,13 @@ export class HospitalSettingsComponent implements OnInit {
   ) {
     this.form = this.fb.group({
       name: ['', Validators.required],
-      address: ['', Validators.required]
+      address: ['', Validators.required],
+      facilityCode: ['']
     });
     this.editForm = this.fb.group({
       name: ['', Validators.required],
-      address: ['', Validators.required]
+      address: ['', Validators.required],
+      facilityCode: ['']
     });
   }
 
@@ -214,9 +228,9 @@ export class HospitalSettingsComponent implements OnInit {
     if (this.form.invalid) return;
 
     this.saving = true;
-    const { name, address } = this.form.value;
+    const { name, address, facilityCode } = this.form.value;
 
-    this.hospitalService.create(name, address).subscribe({
+    this.hospitalService.create(name, address, facilityCode).subscribe({
       next: (hospital) => {
         this.hospitals = [...this.hospitals, hospital].sort((a, b) => a.name.localeCompare(b.name));
         this.applyFilter();
@@ -235,16 +249,16 @@ export class HospitalSettingsComponent implements OnInit {
 
   openEdit(h: Hospital) {
     this.editTarget = h;
-    this.editForm.setValue({ name: h.name, address: h.address });
+    this.editForm.setValue({ name: h.name, address: h.address, facilityCode: h.facilityCode || '' });
   }
 
   doEdit() {
     if (this.editForm.invalid || !this.editTarget) return;
     const target = this.editTarget;
-    const { name, address } = this.editForm.value;
+    const { name, address, facilityCode } = this.editForm.value;
 
     this.editSaving = true;
-    this.hospitalService.update(target._id, name, address).subscribe({
+    this.hospitalService.update(target._id, name, address, facilityCode).subscribe({
       next: (updated) => {
         this.hospitals = this.hospitals
           .map(h => h._id === updated._id ? updated : h)

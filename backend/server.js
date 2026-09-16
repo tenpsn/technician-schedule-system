@@ -10,6 +10,7 @@ const authRoutes = require('./routes/authRoutes');
 const workOrderRoutes = require('./routes/workOrderRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const hospitalRoutes = require('./routes/hospitalRoutes');
+const contractRoutes = require('./routes/contractRoutes');
 const lineRoutes = require('./routes/lineRoutes');
 
 // Cron jobs
@@ -50,6 +51,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/work-orders', workOrderRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/hospitals', hospitalRoutes);
+app.use('/api/contracts', contractRoutes);
 app.use('/api/line', lineRoutes);
 
 // Health check

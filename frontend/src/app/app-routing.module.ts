@@ -7,6 +7,7 @@ import { WorkOrderDetailComponent } from './components/work-order-detail/work-or
 import { CancelledOrdersComponent } from './components/cancelled-orders/cancelled-orders.component';
 import { TechDashboardComponent } from './components/tech-dashboard/tech-dashboard.component';
 import { HospitalSettingsComponent } from './components/hospital-settings/hospital-settings.component';
+import { ContractSettingsComponent } from './components/contract-settings/contract-settings.component';
 import { UserSettingsComponent } from './components/user-settings/user-settings.component';
 import { ProfileComponent } from './components/profile/profile.component';
 import { authGuard } from './guards/auth.guard';
@@ -20,6 +21,7 @@ const routes: Routes = [
   { path: 'cancelled-orders', component: CancelledOrdersComponent, canActivate: [authGuard] },
   { path: 'dashboard', component: TechDashboardComponent, canActivate: [authGuard] },
   { path: 'settings/hospitals', component: HospitalSettingsComponent, canActivate: [authGuard] },
+  { path: 'settings/contracts', component: ContractSettingsComponent, canActivate: [authGuard] },
   { path: 'settings/users', component: UserSettingsComponent, canActivate: [authGuard] },
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard] }
 ];
