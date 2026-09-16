@@ -122,9 +122,33 @@ export class LoginComponent {
         this.router.navigate(['/calendar']);
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || (this.i18n.lang === 'th' ? 'เข้าสู่ระบบไม่สำเร็จ' : 'Sign in failed'));
+        this.toastr.error(this.buildLoginErrorMessage(err));
         this.loading = false;
       }
     });
+  }
+
+  // Backend sends a language-neutral `code` (+ any data the message needs)
+  // instead of a pre-built string, so the error respects whichever language
+  // the user has the UI set to rather than always coming back in one language.
+  private buildLoginErrorMessage(err: any): string {
+    const code = err.error?.code;
+    if (code === 'login_locked') {
+      const mins = err.error?.lockedMinutes;
+      return `${this.i18n.t['loginLockedPrefix']} ${mins} ${this.i18n.t['loginLockedSuffix']}`;
+    }
+    if (code === 'invalid_credentials') {
+      const remaining = err.error?.remainingAttempts;
+      const base = this.i18n.t['invalidCredentials'];
+      if (remaining > 0 && remaining <= 2) {
+        const prefix = this.i18n.t['remainingAttemptsPrefix'];
+        return `${base} (${prefix ? prefix + ' ' : ''}${remaining} ${this.i18n.t['remainingAttemptsSuffix']})`;
+      }
+      return base;
+    }
+    if (code === 'account_deactivated') {
+      return this.i18n.t['accountDeactivated'];
+    }
+    return err.error?.message || this.i18n.t['signInFailed'];
   }
 }

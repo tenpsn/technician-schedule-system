@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
+const loginAttempts = require('../utils/loginAttempts');
+const { sendServerError } = require('../utils/httpErrors');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -14,12 +16,12 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
 
     // Validation
     if (!username || !password || !fullName) {
-      return res.status(400).json({ message: 'Please provide all required fields' });
+      return res.status(400).json({ code: 'missing_required_fields', message: 'Please provide all required fields' });
     }
 
     const userExists = await User.findOne({ where: { username } });
     if (userExists) {
-      return res.status(400).json({ message: 'Username already exists' });
+      return res.status(400).json({ code: 'username_exists', message: 'Username already exists' });
     }
 
     // Hash password
@@ -46,7 +48,7 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
     });
   } catch (error) {
     logger.error(`Register error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -56,22 +58,36 @@ router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ message: 'Please provide username and password' });
+      return res.status(400).json({ code: 'missing_login_fields', message: 'Please provide username and password' });
+    }
+
+    const attemptKey = username.trim().toLowerCase();
+    const lockedMinutes = loginAttempts.checkLocked(attemptKey);
+    if (lockedMinutes) {
+      // `message` is an English fallback for non-UI API consumers (curl, Postman);
+      // the frontend builds its own bilingual text from `code` + `lockedMinutes`.
+      return res.status(429).json({
+        code: 'login_locked',
+        lockedMinutes,
+        message: `Too many failed attempts. Try again in ${lockedMinutes} minute(s).`
+      });
     }
 
     const user = await User.findOne({ where: { username } });
 
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      const remainingAttempts = loginAttempts.recordFailure(attemptKey);
+      return res.status(401).json({ code: 'invalid_credentials', remainingAttempts, message: 'Invalid credentials' });
     }
 
     if (!user.active) {
-      return res.status(401).json({ message: 'Account is deactivated' });
+      return res.status(401).json({ code: 'account_deactivated', message: 'Account is deactivated' });
     }
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
 
     if (user && isPasswordMatch) {
+      loginAttempts.recordSuccess(attemptKey);
       const token = jwt.sign(
         { id: user.id, role: user.role },
         process.env.JWT_SECRET,
@@ -89,11 +105,12 @@ router.post('/login', async (req, res) => {
         token
       });
     } else {
-      res.status(401).json({ message: 'Invalid credentials' });
+      const remainingAttempts = loginAttempts.recordFailure(attemptKey);
+      res.status(401).json({ code: 'invalid_credentials', remainingAttempts, message: 'Invalid credentials' });
     }
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -104,7 +121,7 @@ router.get('/me', protect, async (req, res) => {
     res.json(user);
   } catch (error) {
     logger.error(`Get current user error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -116,11 +133,11 @@ router.patch('/me', protect, async (req, res) => {
 
     if (password) {
       if (!currentPassword) {
-        return res.status(400).json({ message: 'กรุณากรอกรหัสผ่านปัจจุบันเพื่อเปลี่ยนรหัสผ่าน' });
+        return res.status(400).json({ code: 'current_password_required', message: 'Current password is required to change password' });
       }
       const isMatch = await bcrypt.compare(currentPassword, user.password);
       if (!isMatch) {
-        return res.status(401).json({ message: 'รหัสผ่านปัจจุบันไม่ถูกต้อง' });
+        return res.status(401).json({ code: 'current_password_incorrect', message: 'Current password is incorrect' });
       }
       const salt = await bcrypt.genSalt(10);
       user.password = await bcrypt.hash(password, salt);
@@ -135,7 +152,7 @@ router.patch('/me', protect, async (req, res) => {
     res.json(user);
   } catch (error) {
     logger.error(`Update profile error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -157,7 +174,7 @@ router.get('/users', protect, authorize('supervisor', 'admin'), async (req, res)
     res.json(users);
   } catch (error) {
     logger.error(`Get users error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -166,13 +183,13 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ code: 'user_not_found', message: 'User not found' });
     }
 
     const { fullName, role, email, phone, active, password } = req.body;
 
     if (active === false && user.id === req.user.id) {
-      return res.status(400).json({ message: 'You cannot deactivate your own account' });
+      return res.status(400).json({ code: 'cannot_deactivate_self', message: 'You cannot deactivate your own account' });
     }
 
     if (fullName !== undefined) user.fullName = fullName;
@@ -190,7 +207,7 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
     res.json(user);
   } catch (error) {
     logger.error(`Update user error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 

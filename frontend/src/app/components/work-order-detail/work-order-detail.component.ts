@@ -5,13 +5,14 @@ import { AuthService } from '../../services/auth.service';
 import { I18nService } from '../../services/i18n.service';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
+import { environment } from '../../../environments/environment';
 
 const REASON_KEYS_TH = ['ลูกค้าขอยกเลิกเนื่องจากเปลี่ยนผู้ให้บริการ', 'อุปกรณ์/อะไหล่ไม่พร้อม', 'ติดงานอื่นที่เร่งด่วนกว่า', 'สภาพอากาศไม่เอื้ออำนวย', 'ลูกค้าเลื่อนออกไปไม่มีกำหนด', 'อื่นๆ (ระบุเอง)'];
 const REASON_LABELS_TH = ['ลูกค้าขอยกเลิก', 'อุปกรณ์ไม่พร้อม', 'ติดงานเร่งด่วน', 'สภาพอากาศ', 'ลูกค้าเลื่อนไม่มีกำหนด', 'อื่นๆ'];
 const REASON_KEYS_EN = ['Customer requested cancellation (switched provider)', 'Parts/equipment not ready', 'Higher-priority job conflict', 'Weather', 'Customer postponed indefinitely', 'Other (specify)'];
 const REASON_LABELS_EN = ['Customer cancelled', 'Parts not ready', 'Urgent job conflict', 'Weather', 'Postponed indefinitely', 'Other'];
 
-type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' | 'postpone-done' | 'actual' | 'actual-done' | null;
+type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' | 'postpone-done' | 'actual' | 'actual-done' | 'photos' | 'photos-done' | 'photo-delete' | null;
 
 @Component({
   selector: 'app-work-order-detail',
@@ -104,13 +105,26 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
               <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedByName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
             </div>
           </div>
+
+          <div class="section" *ngIf="order.photos && order.photos.length > 0">
+            <div class="section-title">📷 {{ i18n.t['photosLabel'] }} ({{ order.photos.length }})</div>
+            <div class="photo-grid">
+              <div class="photo-thumb-wrap" *ngFor="let p of order.photos">
+                <a [href]="photoUrl(p)" target="_blank">
+                  <img class="photo-thumb" [src]="photoUrl(p)" alt="">
+                </a>
+                <button type="button" *ngIf="canUploadPhotos" class="photo-remove" (click)="confirmDeletePhoto(p)">✕</button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div class="actions" *ngIf="order.status !== 'cancelled' && order.status !== 'completed'">
+        <div class="actions" *ngIf="order.status !== 'cancelled'">
           <button *ngIf="canReschedule" (click)="showRescheduleForm = true" class="btn-postpone">{{ i18n.t['postpone'] }}</button>
           <button *ngIf="canCancel" (click)="openCancel()" class="btn-cancel">{{ i18n.t['cancelJob'] }}</button>
           <button *ngIf="canApprove" (click)="showApproveModal = true" class="btn-approve">{{ i18n.t['approvePlan'] }}</button>
           <button *ngIf="canUpdateActual" (click)="openActualForm()" class="btn-update">{{ i18n.t['updateStatus'] }}</button>
+          <button *ngIf="canUploadPhotos" (click)="openPhotoUploadForm()" class="btn-photo">📷 {{ i18n.t['uploadPhotos'] }}</button>
         </div>
       </div>
 
@@ -251,6 +265,47 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           </form>
         </div>
       </div>
+
+      <!-- Photo upload modal -->
+      <div *ngIf="showPhotoUploadForm" class="modal-overlay">
+        <div class="modal-card modal-card-narrow">
+          <div class="modal-title">📷 {{ i18n.t['uploadPhotos'] }}</div>
+          <div class="field">
+            <span>{{ i18n.t['selectPhotos'] }}</span>
+            <label class="file-drop">
+              <input type="file" accept="image/*" multiple (change)="onPhotosSelected($event)">
+              <span class="file-drop-icon">📷</span>
+              <span class="file-drop-text">{{ i18n.t['selectPhotos'] }}</span>
+            </label>
+            <span class="field-hint">{{ photoSizeLimitText }}</span>
+          </div>
+          <div class="photo-select-grid" *ngIf="selectedPhotoPreviews.length > 0; else noPhotos">
+            <div class="photo-select-thumb" *ngFor="let preview of selectedPhotoPreviews; let i = index">
+              <img [src]="preview" alt="">
+              <button type="button" class="photo-remove" (click)="removeSelectedPhoto(i)">✕</button>
+            </div>
+          </div>
+          <ng-template #noPhotos>
+            <div class="modal-body-text">{{ i18n.t['noPhotosSelected'] }}</div>
+          </ng-template>
+          <div class="modal-actions">
+            <button type="button" [disabled]="busy === 'photos'" (click)="submitPhotos()" class="btn-update">{{ savePhotosLabel }}</button>
+            <button type="button" [disabled]="busy === 'photos'" (click)="closePhotoUploadForm()" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete photo confirm modal -->
+      <div *ngIf="deletePhotoTarget" class="modal-overlay">
+        <div class="modal-card modal-card-narrow">
+          <div class="modal-title">{{ i18n.t['deletePhotoTitle'] }}</div>
+          <img class="photo-delete-preview" [src]="photoUrl(deletePhotoTarget)" alt="">
+          <div class="modal-actions">
+            <button type="button" [disabled]="busy === 'photo-delete'" (click)="doDeletePhoto()" class="btn-cancel">{{ i18n.t['delete'] }}</button>
+            <button type="button" [disabled]="busy === 'photo-delete'" (click)="deletePhotoTarget = null" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -311,6 +366,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-approve { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
     .btn-update { border: 1px solid #0b7a5f; background: #0d8f72; color: #fff; }
+    .btn-photo { border: 1px solid #6d28d9; background: #7c3aed; color: #fff; }
     .actions button:hover { filter: brightness(1.05); }
 
     .modal-overlay {
@@ -355,6 +411,33 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .chip-active { border-color: var(--accent); background: var(--accent); color: #fff; }
     .checkbox-row { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--ink); }
     .checkbox-row input { width: 18px; height: 18px; }
+
+    .photo-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .photo-thumb-wrap { position: relative; width: 96px; height: 96px; }
+    .photo-thumb { width: 96px; height: 96px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--line2); display: block; }
+    .photo-delete-preview { width: 100%; max-height: 280px; object-fit: contain; border-radius: var(--radius); margin-top: 14px; background: var(--alt); }
+
+    .file-drop {
+      position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      border: 2px dashed var(--line); border-radius: var(--radius); background: var(--field); padding: 22px 12px;
+      cursor: pointer; text-align: center;
+    }
+    .file-drop:hover { border-color: var(--accent); }
+    .file-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .file-drop-icon { font-size: 22px; }
+    .file-drop-text { font-size: 13px; font-weight: 600; color: var(--sub); }
+    .field-hint { display: block; margin-top: 6px; font-size: 11.5px; color: var(--sub); }
+
+    .photo-select-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .photo-select-thumb { position: relative; width: 88px; height: 88px; }
+    .photo-select-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--line2); }
+    .photo-remove {
+      position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 11px; line-height: 1;
+      display: grid; place-items: center; padding: 0;
+    }
+    .photo-remove:hover { border-color: var(--danger-line, #a5320c); color: var(--danger-text, #a5320c); }
+
     .modal-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
     .modal-actions button { flex: 1 1 150px; height: 50px; border-radius: var(--radius); font-size: 14.5px; font-weight: 700; }
 
@@ -373,6 +456,10 @@ export class WorkOrderDetailComponent implements OnInit {
   showRescheduleForm = false;
   showCancelForm = false;
   showApproveModal = false;
+  showPhotoUploadForm = false;
+  selectedPhotoFiles: File[] = [];
+  selectedPhotoPreviews: string[] = [];
+  deletePhotoTarget: string | null = null;
   approvalNote = '';
   cancelStage: 'edit' | 'confirm' = 'edit';
   busy: Busy = null;
@@ -444,6 +531,16 @@ export class WorkOrderDetailComponent implements OnInit {
     if (this.busy === 'actual-done') return this.i18n.t['saved'];
     return this.i18n.t['save'];
   }
+  get savePhotosLabel(): string {
+    if (this.busy === 'photos') return this.i18n.t['uploading'];
+    if (this.busy === 'photos-done') return this.i18n.t['uploaded'];
+    return this.i18n.t['save'];
+  }
+
+  get photoSizeLimitText(): string {
+    const mb = environment.photoMaxSizeMb;
+    return this.i18n.lang === 'th' ? `ไฟล์ละไม่เกิน ${mb}MB` : `Max ${mb}MB per photo`;
+  }
 
   loadOrder(id: string) {
     this.workOrderService.getOrderById(id).subscribe({
@@ -490,13 +587,13 @@ export class WorkOrderDetailComponent implements OnInit {
   get canUpdateActual(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
-    return isOwner && this.order.status === 'approved';
+    return isOwner && ['approved', 'overdue'].includes(this.order.status);
   }
 
   get canReschedule(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
-    return (isOwner || this.auth.isAdmin) && ['approved', 'pending_approval'].includes(this.order.status);
+    return (isOwner || this.auth.isSupervisor) && ['approved', 'pending_approval', 'overdue'].includes(this.order.status);
   }
 
   get canCancel(): boolean {
@@ -509,6 +606,16 @@ export class WorkOrderDetailComponent implements OnInit {
 
   get canApprove(): boolean {
     return this.auth.isSupervisor && this.order?.status === 'pending_approval';
+  }
+
+  get canUploadPhotos(): boolean {
+    if (!this.order) return false;
+    const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
+    return (isOwner || this.auth.isSupervisor) && this.order.status !== 'cancelled';
+  }
+
+  photoUrl(p: string): string {
+    return this.workOrderService.resolvePhotoUrl(p);
   }
 
   setQuickReason(reason: string): void {
@@ -596,7 +703,7 @@ export class WorkOrderDetailComponent implements OnInit {
       },
       error: (err) => {
         this.busy = null;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
       }
     });
   }
@@ -628,7 +735,7 @@ export class WorkOrderDetailComponent implements OnInit {
       },
       error: (err) => {
         this.busy = null;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
       }
     });
   }
@@ -654,7 +761,89 @@ export class WorkOrderDetailComponent implements OnInit {
       },
       error: (err) => {
         this.busy = null;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
+      }
+    });
+  }
+
+  openPhotoUploadForm() {
+    this.clearSelectedPhotos();
+    this.showPhotoUploadForm = true;
+  }
+
+  closePhotoUploadForm() {
+    this.showPhotoUploadForm = false;
+    this.clearSelectedPhotos();
+  }
+
+  private clearSelectedPhotos() {
+    this.selectedPhotoPreviews.forEach(url => URL.revokeObjectURL(url));
+    this.selectedPhotoFiles = [];
+    this.selectedPhotoPreviews = [];
+  }
+
+  onPhotosSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files || []);
+    this.selectedPhotoPreviews.forEach(url => URL.revokeObjectURL(url));
+    this.selectedPhotoFiles = files;
+    this.selectedPhotoPreviews = files.map(f => URL.createObjectURL(f));
+    input.value = '';
+  }
+
+  removeSelectedPhoto(index: number) {
+    URL.revokeObjectURL(this.selectedPhotoPreviews[index]);
+    this.selectedPhotoFiles.splice(index, 1);
+    this.selectedPhotoPreviews.splice(index, 1);
+  }
+
+  submitPhotos() {
+    if (this.selectedPhotoFiles.length === 0) {
+      this.toastr.warning(this.i18n.t['toastNeedPhotos']);
+      return;
+    }
+
+    this.busy = 'photos';
+    this.workOrderService.uploadPhotos(this.order!._id, this.selectedPhotoFiles).subscribe({
+      next: (res) => {
+        this.order = res;
+        this.busy = 'photos-done';
+        this.toastr.success(this.i18n.t['toastPhotosUploaded']);
+        this.cdr.detectChanges();
+        setTimeout(() => {
+          this.busy = null;
+          this.showPhotoUploadForm = false;
+          this.clearSelectedPhotos();
+          this.cdr.detectChanges();
+        }, 700);
+      },
+      error: (err) => {
+        this.busy = null;
+        this.toastr.error(this.i18n.errorMessage(err));
+      }
+    });
+  }
+
+  confirmDeletePhoto(p: string) {
+    this.deletePhotoTarget = p;
+  }
+
+  doDeletePhoto() {
+    if (!this.deletePhotoTarget || !this.order) return;
+    const target = this.deletePhotoTarget;
+
+    this.busy = 'photo-delete';
+    this.workOrderService.deletePhoto(this.order._id, target).subscribe({
+      next: (res) => {
+        this.order = res;
+        this.busy = null;
+        this.deletePhotoTarget = null;
+        this.toastr.success(this.i18n.t['toastPhotoDeleted']);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.busy = null;
+        this.toastr.error(this.i18n.errorMessage(err));
       }
     });
   }
@@ -676,7 +865,7 @@ export class WorkOrderDetailComponent implements OnInit {
       },
       error: (err) => {
         this.busy = null;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
       }
     });
   }

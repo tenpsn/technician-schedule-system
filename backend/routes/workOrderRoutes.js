@@ -3,7 +3,9 @@ const { Op } = require('sequelize');
 const WorkOrder = require('../models/WorkOrder');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
-const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork } = require('../services/workOrderService');
+const { uploadPhotos, saveCompressedPhoto, deletePhotoFile } = require('../middleware/upload');
+const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto } = require('../services/workOrderService');
+const { sendServerError } = require('../utils/httpErrors');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -25,7 +27,7 @@ router.post('/', protect, async (req, res) => {
 
     // Validation
     if (!customerName || !customerLocation || !workType || !plannedDate) {
-      return res.status(400).json({ message: 'Please provide all required fields' });
+      return res.status(400).json({ code: 'missing_required_fields', message: 'Please provide all required fields' });
     }
 
     const workOrder = await createWorkOrder({
@@ -42,7 +44,7 @@ router.post('/', protect, async (req, res) => {
     res.status(201).json(workOrder);
   } catch (error) {
     logger.error(`Create work order error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -73,7 +75,7 @@ router.get('/my', protect, async (req, res) => {
     res.json(orders);
   } catch (error) {
     logger.error(`Get my orders error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -105,7 +107,7 @@ router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) =
     res.json(orders);
   } catch (error) {
     logger.error(`Get all orders error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -117,7 +119,7 @@ router.get('/:id', protect, async (req, res) => {
     });
 
     if (!order) {
-      return res.status(404).json({ message: 'Work order not found' });
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
     // Check permission
@@ -125,13 +127,13 @@ router.get('/:id', protect, async (req, res) => {
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
     if (!isOwner && !isSupervisor) {
-      return res.status(403).json({ message: 'Not authorized to view this order' });
+      return res.status(403).json({ code: 'not_authorized_view_order', message: 'Not authorized to view this order' });
     }
 
     res.json(order);
   } catch (error) {
     logger.error(`Get order error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -142,7 +144,7 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
     const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
-      return res.status(404).json({ message: 'Work order not found' });
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
     await approveWorkOrder(order, {
@@ -153,10 +155,10 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
     res.json(order);
   } catch (error) {
     if (error.statusCode) {
-      return res.status(error.statusCode).json({ message: error.message });
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
     }
     logger.error(`Approve error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -170,7 +172,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
     const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
-      return res.status(404).json({ message: 'Work order not found' });
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
     // Check ownership
@@ -178,7 +180,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
     if (!isOwner && !isSupervisor) {
-      return res.status(403).json({ message: 'Not authorized' });
+      return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
     }
 
     await logActualWork(order, {
@@ -190,10 +192,88 @@ router.patch('/:id/actual', protect, async (req, res) => {
     res.json(order);
   } catch (error) {
     if (error.statusCode) {
-      return res.status(error.statusCode).json({ message: error.message });
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
     }
     logger.error(`Update actual error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
+  }
+});
+
+// Upload job-site photos (Technician)
+router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
+  try {
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
+
+    if (!order) {
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
+    }
+
+    // Check ownership
+    const isOwner = order.technicianId === req.user.id;
+    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+
+    if (!isOwner && !isSupervisor) {
+      return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ code: 'photos_required', message: 'Please select at least 1 photo' });
+    }
+
+    const results = await Promise.allSettled(req.files.map(f => saveCompressedPhoto(order.id, f.buffer)));
+    const failure = results.find(r => r.status === 'rejected');
+    if (failure) {
+      // One bad file shouldn't leave the good ones behind as orphans with no
+      // order.photos reference — clean up everything this batch wrote.
+      results.filter(r => r.status === 'fulfilled').forEach(r => deletePhotoFile(r.value));
+      logger.error(`Photo compression error: ${failure.reason.message}`);
+      return res.status(400).json({ code: 'photo_invalid', message: 'Photo file is invalid or corrupted' });
+    }
+    const urls = results.map(r => r.value);
+
+    await addPhotos(order, urls, req.user.username);
+
+    res.json(order);
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
+    }
+    logger.error(`Upload photos error: ${error.message}`);
+    sendServerError(res);
+  }
+});
+
+// Remove a job-site photo (Technician / Supervisor)
+router.delete('/:id/photos', protect, async (req, res) => {
+  try {
+    const { photo } = req.body;
+    if (!photo) {
+      return res.status(400).json({ code: 'photo_to_delete_required', message: 'Please specify which photo to delete' });
+    }
+
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
+
+    if (!order) {
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
+    }
+
+    const isOwner = order.technicianId === req.user.id;
+    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+
+    if (!isOwner && !isSupervisor) {
+      return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
+    }
+
+    await removePhoto(order, photo, req.user.username);
+    deletePhotoFile(photo);
+
+    res.json(order);
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
+    }
+    logger.error(`Delete photo error: ${error.message}`);
+    sendServerError(res);
   }
 });
 
@@ -203,19 +283,21 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
     const { newDate, reason } = req.body;
 
     if (!newDate || !reason) {
-      return res.status(400).json({ message: 'New date and reason are required' });
+      return res.status(400).json({ code: 'reschedule_fields_required', message: 'New date and reason are required' });
     }
 
     const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
-      return res.status(404).json({ message: 'Work order not found' });
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
-    // Check ownership
+    // Check ownership — matches cancel/approve/actual/photos, which all allow
+    // supervisor too, not just admin (this one used to be the odd one out).
     const isOwner = order.technicianId === req.user.id;
-    if (!isOwner && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized to reschedule' });
+    const isSupervisor = ['supervisor', 'admin'].includes(req.user.role);
+    if (!isOwner && !isSupervisor) {
+      return res.status(403).json({ code: 'not_authorized_reschedule', message: 'Not authorized to reschedule' });
     }
 
     await rescheduleWorkOrder(order, {
@@ -225,7 +307,7 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
     res.json(order);
   } catch (error) {
     logger.error(`Reschedule error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -236,13 +318,13 @@ router.patch('/:id/cancel', protect, async (req, res) => {
 
     // Validate reason
     if (!cancelReason || cancelReason.trim() === '') {
-      return res.status(400).json({ message: 'กรุณาระบุเหตุผลการยกเลิก' });
+      return res.status(400).json({ code: 'cancel_reason_required', message: 'Please state a reason for cancelling' });
     }
 
     const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
 
     if (!order) {
-      return res.status(404).json({ message: 'ไม่พบงาน' });
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
     // Check permission: owner or supervisor/admin
@@ -250,7 +332,7 @@ router.patch('/:id/cancel', protect, async (req, res) => {
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
     if (!isOwner && !isSupervisor) {
-      return res.status(403).json({ message: 'ไม่มีสิทธิยกเลิกงานนี้' });
+      return res.status(403).json({ code: 'not_authorized_cancel', message: 'Not authorized to cancel this job' });
     }
 
     await cancelWorkOrder(order, {
@@ -262,15 +344,16 @@ router.patch('/:id/cancel', protect, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'ยกเลิกงานสำเร็จ',
+      code: 'work_order_cancelled',
+      message: 'Cancelled successfully',
       order
     });
   } catch (error) {
     if (error.statusCode) {
-      return res.status(error.statusCode).json({ message: error.message });
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
     }
     logger.error(`Cancel work order error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -286,7 +369,7 @@ router.get('/status/overdue', protect, authorize('supervisor', 'admin'), async (
     res.json(orders);
   } catch (error) {
     logger.error(`Get overdue error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -314,7 +397,7 @@ router.get('/status/cancelled', protect, authorize('supervisor', 'admin'), async
     res.json(orders);
   } catch (error) {
     logger.error(`Get cancelled orders error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 

@@ -192,7 +192,7 @@ export class ProfileComponent implements OnInit {
       },
       error: (err) => {
         this.saving = false;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.cdr.detectChanges();
       }
     });

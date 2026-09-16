@@ -111,7 +111,6 @@ const WorkOrder = sequelize.define('WorkOrder', {
 
   // Documents
   serviceReportUrl: DataTypes.STRING,
-  customerSignature: DataTypes.STRING,
   photos: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: []

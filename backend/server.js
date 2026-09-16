@@ -46,6 +46,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Uploaded files (work order photos, etc.)
+app.use('/uploads', express.static(path.join(__dirname, process.env.UPLOAD_DIR || 'uploads')));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/work-orders', workOrderRoutes);
@@ -74,14 +77,20 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
-});
+// Only bind a port when this file is run directly (`node server.js` / `npm start`/`dev`).
+// Test files `require('../server')` to get the Express `app` for supertest, which
+// builds its own ephemeral server per request — an extra app.listen() here would
+// just fight that (or a real dev server) for the same port.
+if (require.main === module) {
+  const server = app.listen(PORT, () => {
+    logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+  });
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  logger.error(`❌ Unhandled Rejection: ${err.message}`);
-  server.close(() => process.exit(1));
-});
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (err) => {
+    logger.error(`❌ Unhandled Rejection: ${err.message}`);
+    server.close(() => process.exit(1));
+  });
+}
 
 module.exports = app;

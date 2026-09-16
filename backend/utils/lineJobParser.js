@@ -21,8 +21,16 @@ const parseThaiDate = (str) => {
   const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   const [, d, mo, y] = m;
-  const date = new Date(Number(y), Number(mo) - 1, Number(d));
-  if (Number.isNaN(date.getTime())) return null;
+  const day = Number(d);
+  const month = Number(mo);
+  const year = Number(y);
+  const date = new Date(year, month - 1, day);
+  // Date silently rolls invalid day/month combos over into the next
+  // month/year (e.g. 31/04 -> 1 May) instead of producing NaN — reject
+  // anything that didn't round-trip back to the exact date typed.
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
   return date;
 };
 

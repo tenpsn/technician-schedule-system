@@ -174,6 +174,7 @@ describe('Cancel Work Order API', () => {
       .send({ cancelReason: 'ต้องการยกเลิก' });
     
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain('ไม่สามารถยกเลิก');
+    expect(res.body.code).toBe('cannot_cancel_status');
+    expect(res.body.data).toEqual({ status: 'completed' });
   });
 });

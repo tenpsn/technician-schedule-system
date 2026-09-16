@@ -51,21 +51,35 @@ const createWorkOrder = async ({ technician, customerName, customerLocation, wor
 // reschedule keeps every past approval on record instead of overwriting it.
 const approveWorkOrder = async (order, { approvedById, approvedByName, approvalNote, actorLabel }) => {
   if (order.status !== 'pending_approval') {
-    throw badRequest('Work order is not pending approval');
+    throw badRequest('Work order is not pending approval', 'not_pending_approval');
   }
 
   // Snapshot the approver's name onto the entry itself — approvalHistory is a
   // plain JSONB array, not a real association, so there's nothing to join
   // against later (and this also keeps history accurate if the name changes).
   const entry = { approvedById, approvedByName: approvedByName || null, approvalNote: approvalNote || null, approvedAt: new Date() };
-  order.approvalHistory = [...(order.approvalHistory || []), entry];
-  order.changed('approvalHistory', true);
+  const approvalHistory = [...(order.approvalHistory || []), entry];
 
-  order.status = 'approved';
-  order.approvedById = entry.approvedById;
-  order.approvedAt = entry.approvedAt;
-  order.approvalNote = entry.approvalNote;
-  await order.save();
+  // Conditional update instead of read-then-save: two "approve" requests for
+  // the same order (a double-click, or a web click racing a LINE "อนุมัติ")
+  // both pass the status check above before either write lands if this were
+  // a plain order.save() — collapsing the check into the WHERE clause means
+  // only the first write can actually match a still-pending_approval row.
+  const [affectedCount] = await WorkOrder.update({
+    status: 'approved',
+    approvedById: entry.approvedById,
+    approvedAt: entry.approvedAt,
+    approvalNote: entry.approvalNote,
+    approvalHistory
+  }, {
+    where: { id: order.id, status: 'pending_approval' }
+  });
+
+  if (affectedCount === 0) {
+    throw badRequest('Work order is not pending approval', 'not_pending_approval');
+  }
+
+  await order.reload();
 
   await Notification.create({
     recipientId: order.technicianId,
@@ -81,9 +95,14 @@ const approveWorkOrder = async (order, { approvedById, approvedByName, approvalN
 
 const CANCELLABLE_STATUSES = ['draft', 'pending_approval', 'approved', 'overdue', 'in_progress'];
 
-function badRequest(message) {
+// `code`/`data` let the frontend translate the message into whichever UI
+// language the user has selected (see i18n.service.ts's errorMessage()); the
+// English `message` stays as a fallback for non-UI API consumers.
+function badRequest(message, code, data) {
   const err = new Error(message);
   err.statusCode = 400;
+  err.code = code;
+  err.data = data;
   return err;
 }
 
@@ -127,13 +146,18 @@ const rescheduleWorkOrder = async (order, { newDate, reason, changedById, change
 // text uses their name.
 const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCancelling, isSupervisorCancelling, actorLabel }) => {
   if (!CANCELLABLE_STATUSES.includes(order.status)) {
-    throw badRequest(`ไม่สามารถยกเลิกงานที่มีสถานะ "${order.status}" ได้`);
+    throw badRequest(`Cannot cancel a work order with status "${order.status}"`, 'cannot_cancel_status', { status: order.status });
   }
 
   order.status = 'cancelled';
   order.cancelledById = cancelledById;
   order.cancelledAt = new Date();
   order.cancelReason = cancelReason.trim();
+  // Cancelled orders drop out of the overdue cron's candidate query same as
+  // completed ones do — nothing else would clear these, leaving a cancelled
+  // job stuck showing "overdue" next to its cancelled banner.
+  order.isOverdue = false;
+  order.overdueDays = 0;
   await order.save();
 
   logger.info(`Work order cancelled: ${order.srNumber}${actorLabel ? ` by ${actorLabel}` : ''}. Reason: ${cancelReason}`);
@@ -167,7 +191,7 @@ const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCanc
 const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime, actualLocation, actualDescription,
   repairCompleted, repairIncompleteReason, installationDelivered, recordedById, actorLabel }) => {
   if (!actualDescription) {
-    throw badRequest('Actual description is required');
+    throw badRequest('Actual description is required', 'actual_description_required');
   }
 
   const isRepair = order.workType === 'ซ่อม';
@@ -175,10 +199,10 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
 
   if (isRepair) {
     if (typeof repairCompleted !== 'boolean') {
-      throw badRequest('กรุณาเลือกสถานะการซ่อม');
+      throw badRequest('Please select the repair status', 'repair_status_required');
     }
     if (!repairCompleted && !repairIncompleteReason?.trim()) {
-      throw badRequest('กรุณาระบุสาเหตุที่ยังซ่อมไม่เสร็จ');
+      throw badRequest('Please state why the repair is not finished', 'repair_incomplete_reason_required');
     }
   }
 
@@ -211,10 +235,42 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
 
   const isUnfinished = (isRepair && !repairCompleted) || (isInstallation && !logEntry.installationDelivered);
   order.status = isUnfinished ? 'approved' : 'completed';
+  if (order.status === 'completed') {
+    // Completed orders drop out of the overdue cron's candidate query (it only
+    // rechecks approved/in_progress/pending_approval), so nothing else would
+    // ever clear these flags — leaving a finished job stuck showing "overdue".
+    order.isOverdue = false;
+    order.overdueDays = 0;
+  }
   await order.save();
 
   logger.info(`Work order actual logged: ${order.srNumber}${actorLabel ? ` by ${actorLabel}` : ''} (status=${order.status})`);
   return order;
 };
 
-module.exports = { generateSRNumber, createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, CANCELLABLE_STATUSES };
+// Appends newly uploaded photo URLs rather than overwriting, so photos from
+// separate visits (e.g. before/after a reschedule) all stay on the order.
+const addPhotos = async (order, photoUrls, actorLabel) => {
+  order.photos = [...(order.photos || []), ...photoUrls];
+  order.changed('photos', true);
+  await order.save();
+
+  logger.info(`Photos added: ${order.srNumber}${actorLabel ? ` by ${actorLabel}` : ''} (+${photoUrls.length})`);
+  return order;
+};
+
+const removePhoto = async (order, photoUrl, actorLabel) => {
+  const photos = order.photos || [];
+  if (!photos.includes(photoUrl)) {
+    throw badRequest('Photo not found on this work order', 'photo_not_found_on_order');
+  }
+
+  order.photos = photos.filter(p => p !== photoUrl);
+  order.changed('photos', true);
+  await order.save();
+
+  logger.info(`Photo removed: ${order.srNumber}${actorLabel ? ` by ${actorLabel}` : ''}`);
+  return order;
+};
+
+module.exports = { generateSRNumber, createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto, CANCELLABLE_STATUSES };

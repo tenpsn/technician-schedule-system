@@ -5,9 +5,11 @@ const { Op } = require('sequelize');
 const User = require('../models/User');
 const Hospital = require('../models/Hospital');
 const WorkOrder = require('../models/WorkOrder');
-const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, CANCELLABLE_STATUSES } = require('../services/workOrderService');
+const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, CANCELLABLE_STATUSES } = require('../services/workOrderService');
+const { saveCompressedPhoto } = require('../middleware/upload');
 const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = require('../utils/lineJobParser');
 const lineSession = require('../utils/lineSession');
+const loginAttempts = require('../utils/loginAttempts');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -26,7 +28,7 @@ const HELP_TEXT =
 เวลา: 09:00-12:00
 รายละเอียด: รายละเอียดงาน (ไม่บังคับ)
 
-พิมพ์ "เลื่อนงาน", "ยกเลิกงาน" หรือ "บันทึกงานจริง" แล้วบอทจะถามเลขที่งานและข้อมูลที่ต้องใช้ทีละขั้น`;
+พิมพ์ "เลื่อนงาน", "ยกเลิกงาน", "บันทึกงานจริง" หรือ "ส่งรูป" แล้วบอทจะถามเลขที่งานและข้อมูลที่ต้องใช้ทีละขั้น`;
 
 const LOGIN_SWITCH_TEXT =
 `ต้องการเปลี่ยนบัญชีที่เชื่อมไว้ พิมพ์ "login" แล้วบอทจะถามทีละขั้น
@@ -156,8 +158,24 @@ const finishLogin = async (user, lineUserId, replyToken) => {
     `เชื่อมบัญชีสำเร็จ ✅ สวัสดีคุณ ${user.fullName}\n\n${HELP_TEXT}${roleHelp}\n\n${LOGIN_SWITCH_TEXT}`);
 };
 
+// Deliberately the same message whether the username doesn't exist or the
+// password was wrong — telling them apart lets an attacker enumerate which
+// usernames are real accounts. Only the near-lockout warning changes.
+const buildLoginFailMessage = (remainingAttempts) => {
+  const base = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+  if (remainingAttempts > 0 && remainingAttempts <= 2) {
+    return `${base} (เหลืออีก ${remainingAttempts} ครั้งก่อนถูกล็อกชั่วคราว)`;
+  }
+  return base;
+};
+
 // One-shot format: "login <username> <password>" on a single line.
 const handleLinkAccount = async (text, lineUserId, replyToken) => {
+  const lockedMinutes = loginAttempts.checkLocked(lineUserId);
+  if (lockedMinutes) {
+    return replyText(replyToken, `ลองรหัสผ่านผิดหลายครั้งเกินไป กรุณาลองใหม่อีกครั้งใน ${lockedMinutes} นาที`);
+  }
+
   const [, username, password] = text.split(/\s+/);
   if (!username || !password) {
     return replyText(replyToken, 'รูปแบบไม่ถูกต้อง พิมพ์: login ชื่อผู้ใช้ รหัสผ่าน');
@@ -165,14 +183,20 @@ const handleLinkAccount = async (text, lineUserId, replyToken) => {
 
   const user = await User.findOne({ where: { username } });
   if (!user || !user.active || !(await bcrypt.compare(password, user.password))) {
-    return replyText(replyToken, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    const remaining = loginAttempts.recordFailure(lineUserId);
+    return replyText(replyToken, buildLoginFailMessage(remaining));
   }
 
+  loginAttempts.recordSuccess(lineUserId);
   return finishLogin(user, lineUserId, replyToken);
 };
 
 // Step-by-step format: bare "login" starts a session asking username then password.
 const startLoginSession = (lineUserId, replyToken) => {
+  const lockedMinutes = loginAttempts.checkLocked(lineUserId);
+  if (lockedMinutes) {
+    return replyText(replyToken, `ลองรหัสผ่านผิดหลายครั้งเกินไป กรุณาลองใหม่อีกครั้งใน ${lockedMinutes} นาที`);
+  }
   lineSession.set(lineUserId, { flow: 'login', step: 'username', data: {} });
   return replyText(replyToken,
     `เข้าสู่ระบบ 🔐 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${LOGIN_PROMPTS.username}`);
@@ -196,19 +220,31 @@ const handleLoginStep = async (text, lineUserId, replyToken, session) => {
 
   // step === 'password'
   lineSession.clear(lineUserId);
+  const lockedMinutes = loginAttempts.checkLocked(lineUserId);
+  if (lockedMinutes) {
+    return replyText(replyToken, `ลองรหัสผ่านผิดหลายครั้งเกินไป กรุณาลองใหม่อีกครั้งใน ${lockedMinutes} นาที`);
+  }
   const user = await User.findOne({ where: { username: data.username } });
   if (!user || !user.active || !(await bcrypt.compare(value, user.password))) {
-    return replyText(replyToken, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง พิมพ์ "login" เพื่อลองใหม่');
+    const remaining = loginAttempts.recordFailure(lineUserId);
+    return replyText(replyToken, `${buildLoginFailMessage(remaining)} พิมพ์ "login" เพื่อลองใหม่`);
   }
 
+  loginAttempts.recordSuccess(lineUserId);
   return finishLogin(user, lineUserId, replyToken);
 };
 
 // The hospital master list only stores a short name (e.g. "ท่าวังผ่า") and
 // address, so "ลูกค้า" typed in the LINE message is matched against it to
 // fill in "สถานที่" automatically when the technician leaves it out.
+// ILIKE treats %, _ and \ as pattern metacharacters even though Sequelize
+// parameterizes the value (that only stops SQL injection, not Postgres
+// reinterpreting stray %/_ typed by the technician as wildcards) — escape
+// them so a customer name like "50%" matches literally, not as "any chars".
+const escapeLikePattern = (str) => str.replace(/[\\%_]/g, (c) => `\\${c}`);
+
 const findHospitalMatch = async (customerName) => {
-  const cleaned = customerName.replace(/^รพ\.?\s*/, '').trim();
+  const cleaned = escapeLikePattern(customerName.replace(/^รพ\.?\s*/, '').trim());
 
   const exact = await Hospital.findOne({ where: { name: { [Op.iLike]: cleaned } } });
   if (exact) return exact;
@@ -221,7 +257,12 @@ const findHospitalMatch = async (customerName) => {
 };
 
 const finishAddJob = async (technician, data, replyToken) => {
-  const workOrder = await createWorkOrder({ technician, ...data });
+  let workOrder;
+  try {
+    workOrder = await createWorkOrder({ technician, ...data });
+  } catch (error) {
+    return replyText(replyToken, error.message);
+  }
   return replyText(replyToken,
     `เพิ่มงานสำเร็จ ✅\nเลขที่: ${workOrder.srNumber}\nลูกค้า: ${workOrder.customerName}\n` +
     `วันที่: ${data.plannedDate.toLocaleDateString('th-TH')}\n\nสถานะ: รอหัวหน้าอนุมัติ`);
@@ -367,7 +408,8 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
     const isOwner = order.technicianId === technician.id;
-    if (!isOwner && technician.role !== 'admin') {
+    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    if (!isOwner && !isSupervisor) {
       lineSession.clear(lineUserId);
       return replyText(replyToken, 'คุณไม่มีสิทธิเลื่อนงานนี้');
     }
@@ -397,9 +439,13 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
   if (!order) {
     return replyText(replyToken, 'ไม่พบงานนี้แล้ว (อาจถูกลบไปแล้ว)');
   }
-  await rescheduleWorkOrder(order, {
-    newDate: data.newDate, reason: value, changedById: technician.id, changedByName: technician.fullName, actorLabel: technician.username
-  });
+  try {
+    await rescheduleWorkOrder(order, {
+      newDate: data.newDate, reason: value, changedById: technician.id, changedByName: technician.fullName, actorLabel: technician.username
+    });
+  } catch (error) {
+    return replyText(replyToken, error.message);
+  }
   return replyText(replyToken,
     `เลื่อนงาน ${order.srNumber} สำเร็จ ✅\nวันที่ใหม่: ${data.newDate.toLocaleDateString('th-TH')}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
 };
@@ -624,6 +670,111 @@ const handleApprove = async (text, approver, replyToken) => {
   return replyText(replyToken, `อนุมัติงาน ${srNumber} สำเร็จ ✅\nลูกค้า: ${order.customerName}`);
 };
 
+const LINE_CONTENT_URL = (messageId) => `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+const MAX_PHOTOS_PER_SESSION = 10;
+
+// Images are bigger than the text replies replyText() sends, so give the
+// content download more headroom than the 5s used for a reply.
+const downloadLineImage = async (messageId) => {
+  const res = await fetch(LINE_CONTENT_URL(messageId), {
+    headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!res.ok) {
+    throw new Error(`LINE content download failed: ${res.status}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+};
+
+const startPhotoSession = (lineUserId, replyToken) => {
+  lineSession.set(lineUserId, { flow: 'photo', step: 'srNumber', data: {} });
+  return replyText(replyToken,
+    `ส่งรูปหน้างาน 📷 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\nพิมพ์เลขที่งานที่จะแนบรูป เช่น SR-202609-0034`);
+};
+
+// Handles typed messages while in the 'photo' flow: the srNumber lookup step,
+// and "จบ"/"เสร็จ" to close out the awaitingPhoto step (actual images arrive
+// as separate 'image' events, handled by handlePhotoImage below).
+const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, session) => {
+  const value = text.trim();
+
+  if (ABORT_KEYWORDS.includes(value)) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, 'ยกเลิกการส่งรูปแล้ว');
+  }
+
+  const { step, data } = session;
+
+  if (step === 'srNumber') {
+    const order = await WorkOrder.findOne({ where: { srNumber: value } });
+    if (!order) {
+      return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
+    }
+    const isOwner = order.technicianId === technician.id;
+    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    if (!isOwner && !isSupervisor) {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, 'คุณไม่มีสิทธิแนบรูปงานนี้');
+    }
+    if (order.status === 'cancelled') {
+      lineSession.clear(lineUserId);
+      return replyText(replyToken, `งาน ${value} ถูกยกเลิกแล้ว ไม่สามารถแนบรูปได้`);
+    }
+    data.orderId = order.id;
+    data.count = 0;
+    lineSession.set(lineUserId, { flow: 'photo', step: 'awaitingPhoto', data });
+    return replyText(replyToken, `${orderSummaryLines(order)}\n\nส่งรูปมาได้เลยครับ (ส่งได้หลายรูป พิมพ์ "จบ" เมื่อเสร็จ)`);
+  }
+
+  // step === 'awaitingPhoto', got text instead of an image
+  if (value === 'จบ' || value === 'เสร็จ') {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, data.count > 0
+      ? `แนบรูปสำเร็จ ${data.count} รูป ✅`
+      : 'ยังไม่ได้แนบรูปเลยครับ ส่งรูปมาได้เลย หรือพิมพ์ "หยุด" เพื่อยกเลิก');
+  }
+  return replyText(replyToken, 'ส่งรูปภาพมาได้เลยครับ หรือพิมพ์ "จบ" เมื่อเสร็จ');
+};
+
+// Handles an incoming 'image' message while in the awaitingPhoto step. Errors
+// deliberately don't clear the session — a failed download/save shouldn't
+// force the technician to retype the SR number just to try sending again.
+const handlePhotoImage = async (messageId, technician, lineUserId, replyToken, session) => {
+  const { data } = session;
+
+  let buffer;
+  try {
+    buffer = await downloadLineImage(messageId);
+  } catch (error) {
+    logger.error(`LINE image download error: ${error.message}`);
+    return replyText(replyToken, 'โหลดรูปจาก LINE ไม่สำเร็จ ลองส่งใหม่อีกครั้ง');
+  }
+
+  // Session only carries the orderId across requests (not a live Sequelize
+  // instance), so re-fetch the order fresh for every photo.
+  const order = await WorkOrder.findByPk(data.orderId);
+  if (!order) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, 'ไม่พบงานนี้แล้ว (อาจถูกลบไปแล้ว)');
+  }
+
+  try {
+    const url = await saveCompressedPhoto(order.id, buffer);
+    await addPhotos(order, [url], technician.username);
+  } catch (error) {
+    logger.error(`LINE photo save error: ${error.message}`);
+    return replyText(replyToken, 'บันทึกรูปไม่สำเร็จ ลองส่งใหม่อีกครั้ง');
+  }
+
+  data.count += 1;
+  if (data.count >= MAX_PHOTOS_PER_SESSION) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, `แนบรูปสำเร็จ ${data.count} รูป ✅ (ครบจำนวนสูงสุดต่อครั้งแล้ว)`);
+  }
+  lineSession.set(lineUserId, { flow: 'photo', step: 'awaitingPhoto', data });
+  return replyText(replyToken, `📷 รับรูปแล้ว (${data.count}) ส่งต่อได้อีก หรือพิมพ์ "จบ"`);
+};
+
 router.post('/webhook', async (req, res) => {
   if (!verifySignature(req)) {
     logger.warn(`LINE webhook: invalid signature (hasHeader=${!!req.headers['x-line-signature']}, hasRawBody=${!!req.rawBody})`);
@@ -635,11 +786,30 @@ router.post('/webhook', async (req, res) => {
   for (const event of events) {
     try {
       logger.info(`LINE webhook event: type=${event.type} messageType=${event.message?.type} text=${JSON.stringify(event.message?.text)}`);
-      if (event.type !== 'message' || event.message.type !== 'text') continue;
+      if (event.type !== 'message') continue;
+      const messageType = event.message.type;
+      if (messageType !== 'text' && messageType !== 'image') continue;
 
-      const text = event.message.text.trim();
       const lineUserId = event.source.userId;
       const { replyToken } = event;
+
+      if (messageType === 'image') {
+        const imageTechnician = await User.findOne({ where: { lineUserId } });
+        if (!imageTechnician) {
+          await replyText(replyToken, LINK_HELP_TEXT);
+          continue;
+        }
+        const photoSession = lineSession.get(lineUserId);
+        if (photoSession && photoSession.flow === 'photo' && photoSession.step === 'awaitingPhoto') {
+          logger.info(`LINE webhook: handling photo image from ${imageTechnician.username}`);
+          await handlePhotoImage(event.message.id, imageTechnician, lineUserId, replyToken, photoSession);
+        } else {
+          await replyText(replyToken, 'พิมพ์ "ส่งรูป" ก่อน แล้วระบุเลขที่งาน ถึงจะแนบรูปได้ครับ');
+        }
+        continue;
+      }
+
+      const text = event.message.text.trim();
 
       if (text === 'login') {
         logger.info(`LINE webhook: starting login session for lineUserId=${lineUserId}`);
@@ -679,6 +849,9 @@ router.post('/webhook', async (req, res) => {
       } else if (session && session.flow === 'actual') {
         logger.info(`LINE webhook: handling actual-work step "${session.step}" from ${technician.username}`);
         await handleActualStep(text, technician, lineUserId, replyToken, session);
+      } else if (session && session.flow === 'photo') {
+        logger.info(`LINE webhook: handling photo-attach step "${session.step}" from ${technician.username}`);
+        await handlePhotoTextStep(text, technician, lineUserId, replyToken, session);
       } else if (text === 'เพิ่มงาน') {
         logger.info(`LINE webhook: starting add-job session for ${technician.username}`);
         await startAddJobSession(lineUserId, replyToken);
@@ -691,6 +864,9 @@ router.post('/webhook', async (req, res) => {
       } else if (text === 'บันทึกงานจริง') {
         logger.info(`LINE webhook: starting actual-work session for ${technician.username}`);
         await startActualSession(lineUserId, replyToken);
+      } else if (text === 'ส่งรูป') {
+        logger.info(`LINE webhook: starting photo-attach session for ${technician.username}`);
+        await startPhotoSession(lineUserId, replyToken);
       } else if (isAddJobMessage(text)) {
         logger.info(`LINE webhook: handling one-shot add-job message from ${technician.username}`);
         await handleAddJob(text, technician, replyToken);

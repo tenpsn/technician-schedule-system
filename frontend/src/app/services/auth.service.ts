@@ -77,7 +77,34 @@ export class AuthService {
   }
 
   get isAuthenticated(): boolean {
-    return !!this.currentUser;
+    const user = this.currentUser;
+    if (!user) return false;
+    if (user.token && this.isTokenExpired(user.token)) {
+      // Route guards only check isAuthenticated, so without this an expired
+      // session would render a protected page before the first API call
+      // 401s and the interceptor kicks it back to login.
+      this.logout();
+      return false;
+    }
+    return true;
+  }
+
+  // Reads the JWT's exp claim client-side — no signature check, just enough
+  // to avoid showing protected UI with a token the server will reject anyway.
+  private isTokenExpired(token: string): boolean {
+    const payload = this.decodeJwtPayload(token);
+    if (!payload || typeof payload.exp !== 'number') return false;
+    return Date.now() >= payload.exp * 1000;
+  }
+
+  private decodeJwtPayload(token: string): any {
+    try {
+      const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+      return JSON.parse(atob(padded));
+    } catch {
+      return null;
+    }
   }
 
   get isSupervisor(): boolean {

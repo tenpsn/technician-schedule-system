@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import { ContractService, Contract, MaVisit } from '../../services/contract.service';
@@ -7,6 +7,16 @@ import { HospitalService, Hospital } from '../../services/hospital.service';
 import { UserService } from '../../services/user.service';
 import { I18nService } from '../../services/i18n.service';
 import { SelectOption } from '../select/select.component';
+
+// startDate/endDate are "YYYY-MM-DD" strings — safe to compare lexicographically.
+function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
+  const start = group.get('startDate')?.value;
+  const end = group.get('endDate')?.value;
+  if (start && end && end < start) {
+    return { dateRange: true };
+  }
+  return null;
+}
 
 @Component({
   selector: 'app-contract-settings',
@@ -35,6 +45,7 @@ import { SelectOption } from '../select/select.component';
           <label class="field">
             <span>{{ i18n.t['contractEnd'] }} *</span>
             <app-date-picker formControlName="endDate"></app-date-picker>
+            <span class="error" *ngIf="form.errors?.['dateRange']">{{ i18n.t['dateRangeError'] }}</span>
           </label>
           <label class="field field-ma">
             <span>{{ i18n.t['contractMaInterval'] }} *</span>
@@ -111,6 +122,7 @@ import { SelectOption } from '../select/select.component';
             <label class="field modal-field">
               <span>{{ i18n.t['contractEnd'] }} *</span>
               <app-date-picker formControlName="endDate"></app-date-picker>
+              <span class="error" *ngIf="editForm.errors?.['dateRange']">{{ i18n.t['dateRangeError'] }}</span>
             </label>
             <label class="field modal-field">
               <span>{{ i18n.t['contractMaInterval'] }} *</span>
@@ -209,6 +221,7 @@ import { SelectOption } from '../select/select.component';
     .field span { font-size: 12px; color: var(--sub); }
     .field input { border-radius: var(--radius); height: 46px; padding: 0 12px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 14px; outline: none; }
     .field input:focus { border-color: var(--accent); }
+    .error { color: var(--danger-text); font-size: 12px; }
     .field-ma { flex: 0 1 190px; }
     .ma-input { display: flex; align-items: center; gap: 8px; }
     .ma-input input { flex: 1; min-width: 0; text-align: right; }
@@ -335,14 +348,14 @@ export class ContractSettingsComponent implements OnInit {
       startDate: ['', Validators.required],
       endDate: ['', Validators.required],
       maIntervalMonths: ['', [Validators.required, Validators.min(1), Validators.max(12)]]
-    });
+    }, { validators: dateRangeValidator });
     this.editForm = this.fb.group({
       hospitalId: ['', Validators.required],
       contractNumber: ['', Validators.required],
       startDate: ['', Validators.required],
       endDate: ['', Validators.required],
       maIntervalMonths: ['', [Validators.required, Validators.min(1), Validators.max(12)]]
-    });
+    }, { validators: dateRangeValidator });
   }
 
   ngOnInit() {
@@ -435,7 +448,7 @@ export class ContractSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.saving = false;
         this.cdr.detectChanges();
       }
@@ -469,7 +482,7 @@ export class ContractSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.editSaving = false;
         this.cdr.detectChanges();
       }
@@ -506,7 +519,7 @@ export class ContractSettingsComponent implements OnInit {
       },
       error: (err) => {
         visit.scheduledDate = previous;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.cdr.detectChanges();
       }
     });
@@ -526,7 +539,7 @@ export class ContractSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.assigningVisitId = null;
         this.cdr.detectChanges();
       }

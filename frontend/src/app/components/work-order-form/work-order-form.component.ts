@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { WorkOrderService } from '../../services/work-order.service';
@@ -8,6 +8,18 @@ import { I18nService } from '../../services/i18n.service';
 import { SelectOption } from '../select/select.component';
 import { ToastrService } from 'ngx-toastr';
 import { Router } from '@angular/router';
+
+// plannedStartTime/plannedEndTime are "HH:MM" strings — safe to compare
+// lexicographically. Flags the pair invalid rather than silently letting an
+// end time before the start time get saved.
+function timeRangeValidator(group: AbstractControl): ValidationErrors | null {
+  const start = group.get('plannedStartTime')?.value;
+  const end = group.get('plannedEndTime')?.value;
+  if (start && end && end <= start) {
+    return { timeRange: true };
+  }
+  return null;
+}
 
 @Component({
   selector: 'app-work-order-form',
@@ -103,6 +115,9 @@ import { Router } from '@angular/router';
                   </div>
                 </div>
               </div>
+              <div class="error" *ngIf="form.errors?.['timeRange'] && form.get('plannedEndTime')?.touched">
+                {{ i18n.lang === 'th' ? 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม' : 'End time must be after start time' }}
+              </div>
             </div>
           </div>
 
@@ -186,7 +201,7 @@ export class WorkOrderFormComponent implements OnInit {
       plannedStartTime: ['', Validators.required],
       plannedEndTime: ['', Validators.required],
       description: ['']
-    });
+    }, { validators: timeRangeValidator });
 
     this.form.get('workType')?.valueChanges.subscribe(() => this.onWorkTypeChange());
 
@@ -280,7 +295,7 @@ export class WorkOrderFormComponent implements OnInit {
         setTimeout(() => this.router.navigate(['/calendar']), 700);
       },
       error: (err) => {
-        this.toastr.error((this.i18n.lang === 'th' ? 'เกิดข้อผิดพลาด: ' : 'Error: ') + (err.error?.message || err.message));
+        this.toastr.error(this.i18n.errorMessage(err));
         this.loading = false;
         this.cdr.detectChanges();
       }

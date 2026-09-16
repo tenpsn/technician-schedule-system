@@ -2,6 +2,7 @@ const express = require('express');
 const Notification = require('../models/Notification');
 const WorkOrder = require('../models/WorkOrder');
 const { protect } = require('../middleware/auth');
+const { sendServerError } = require('../utils/httpErrors');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -19,7 +20,7 @@ router.get('/', protect, async (req, res) => {
     res.json(notifications);
   } catch (error) {
     logger.error(`Get notifications error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -29,11 +30,11 @@ router.patch('/:id/read', protect, async (req, res) => {
     const notification = await Notification.findByPk(req.params.id);
 
     if (!notification) {
-      return res.status(404).json({ message: 'Notification not found' });
+      return res.status(404).json({ code: 'notification_not_found', message: 'Notification not found' });
     }
 
     if (notification.recipientId !== req.user.id) {
-      return res.status(403).json({ message: 'Not authorized' });
+      return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
     }
 
     notification.isRead = true;
@@ -42,7 +43,7 @@ router.patch('/:id/read', protect, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     logger.error(`Mark read error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -56,7 +57,7 @@ router.patch('/read-all', protect, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     logger.error(`Mark all read error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -69,7 +70,7 @@ router.get('/unread/count', protect, async (req, res) => {
     res.json({ count });
   } catch (error) {
     logger.error(`Get count error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 

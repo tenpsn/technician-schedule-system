@@ -45,6 +45,7 @@ export interface WorkOrder {
   repairIncompleteReason?: string;
   installationDelivered?: boolean;
   actualLog?: ActualLogEntry[];
+  photos?: string[];
   status: string;
   approvedBy?: any;
   approvedAt?: string;
@@ -62,7 +63,15 @@ export interface WorkOrder {
 
 @Injectable({ providedIn: 'root' })
 export class WorkOrderService {
+  // environment.apiUrl ends in "/api", but uploaded photos are served from
+  // "/uploads/..." off the same origin, so strip the "/api" suffix here.
+  private photoBase = environment.apiUrl.replace(/\/api\/?$/, '');
+
   constructor(private http: HttpClient, private auth: AuthService) {}
+
+  resolvePhotoUrl(p: string): string {
+    return this.photoBase + p;
+  }
 
   private getHeaders() {
     return { 
@@ -108,6 +117,21 @@ export class WorkOrderService {
   updateActual(id: string, data: any): Observable<WorkOrder> {
     return this.http.patch<WorkOrder>(`${environment.apiUrl}/work-orders/${id}/actual`, 
       data, { headers: this.getHeaders() });
+  }
+
+  uploadPhotos(id: string, files: File[]): Observable<WorkOrder> {
+    const formData = new FormData();
+    files.forEach(f => formData.append('photos', f));
+    // Deliberately not using getHeaders() — its hardcoded Content-Type:
+    // application/json would stop the browser from setting the multipart
+    // boundary, breaking the upload.
+    return this.http.patch<WorkOrder>(`${environment.apiUrl}/work-orders/${id}/photos`, formData,
+      { headers: { Authorization: `Bearer ${this.auth.token}` } });
+  }
+
+  deletePhoto(id: string, photo: string): Observable<WorkOrder> {
+    return this.http.request<WorkOrder>('DELETE', `${environment.apiUrl}/work-orders/${id}/photos`,
+      { headers: this.getHeaders(), body: { photo } });
   }
 
   reschedule(id: string, newDate: string, reason: string): Observable<WorkOrder> {

@@ -6,6 +6,7 @@ const WorkOrder = require('../models/WorkOrder');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
 const { createWorkOrder } = require('../services/workOrderService');
+const { sendServerError } = require('../utils/httpErrors');
 const logger = require('../config/logger');
 const { nextBusinessDay } = require('../utils/thaiHolidays');
 
@@ -18,26 +19,32 @@ const router = express.Router();
 function validateBody(body) {
   const { hospitalId, contractNumber, startDate, endDate, maIntervalMonths } = body;
   if (!hospitalId || !contractNumber || !startDate || !endDate || !maIntervalMonths) {
-    return 'กรุณากรอกข้อมูลสัญญาให้ครบถ้วน';
+    return { code: 'contract_fields_required', message: 'Please provide all contract fields' };
   }
   const interval = parseInt(maIntervalMonths);
   if (!Number.isInteger(interval) || interval < 1 || interval > 12) {
-    return 'รอบ MA ต้องเป็นจำนวนเดือนระหว่าง 1-12';
+    return { code: 'ma_interval_range', message: 'MA interval must be between 1-12 months' };
   }
   if (endDate < startDate) {
-    return 'วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่ม';
+    return { code: 'dateRangeError', message: 'End date must be after start date' };
   }
   return null;
 }
 
 // Adds `months` calendar months to a 'YYYY-MM-DD' string, returning the same format.
+// Clamps to the target month's last day instead of letting it overflow (plain
+// Date.setUTCMonth would silently roll e.g. 31 Jan + 1 month into 3 Mar, since
+// Feb has no 31st) — otherwise every later visit in the schedule keeps drifting.
 function addMonths(dateStr, months) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCMonth(date.getUTCMonth() + months);
-  const yyyy = date.getUTCFullYear();
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const totalMonths = y * 12 + (m - 1) + months;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = ((totalMonths % 12) + 12) % 12;
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const day = Math.min(d, daysInTargetMonth);
+  const yyyy = targetYear;
+  const mm = String(targetMonth + 1).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
@@ -59,16 +66,31 @@ function generateVisitDates(startDate, endDate, intervalMonths) {
 // Regenerates the MA visit schedule for a contract. Visits already assigned to a
 // technician (workOrderId set) are real jobs now — they're left untouched instead
 // of being wiped out, and only the still-unassigned placeholders are replaced.
+//
+// sequenceNo is renumbered across the WHOLE combined set (assigned + freshly
+// generated) in chronological order, not just appended after assignedCount —
+// appending after the count let an edit collide two different visits onto the
+// same sequenceNo (e.g. an assigned "#2" and a newly generated "#2" for a
+// different date) whenever an assigned visit wasn't first in the list.
 async function regenerateVisits(contractId, startDate, endDate, intervalMonths) {
   await MaVisit.destroy({ where: { contractId, workOrderId: null } });
-  const assignedCount = await MaVisit.count({ where: { contractId } });
+  const assigned = await MaVisit.findAll({ where: { contractId } });
+  const assignedDates = new Set(assigned.map((v) => v.scheduledDate));
+
   const dates = generateVisitDates(startDate, endDate, intervalMonths);
-  if (dates.length === 0) return;
-  await MaVisit.bulkCreate(dates.map((scheduledDate, i) => ({
-    contractId,
-    sequenceNo: assignedCount + i + 1,
-    scheduledDate
-  })));
+  const newDates = dates.filter((d) => !assignedDates.has(d));
+
+  const combined = [
+    ...assigned.map((v) => ({ id: v.id, scheduledDate: v.scheduledDate })),
+    ...newDates.map((d) => ({ id: null, scheduledDate: d }))
+  ].sort((a, b) => (a.scheduledDate < b.scheduledDate ? -1 : a.scheduledDate > b.scheduledDate ? 1 : 0));
+
+  await Promise.all(combined.map((item, i) => {
+    const sequenceNo = i + 1;
+    return item.id
+      ? MaVisit.update({ sequenceNo }, { where: { id: item.id } })
+      : MaVisit.create({ contractId, sequenceNo, scheduledDate: item.scheduledDate });
+  }));
 }
 
 // List contracts (optionally filtered by hospitalId)
@@ -86,7 +108,7 @@ router.get('/', protect, async (req, res) => {
     res.json(contracts);
   } catch (error) {
     logger.error(`Get contracts error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -104,7 +126,7 @@ router.get('/:id/visits', protect, async (req, res) => {
     if (visits.length === 0) {
       const contract = await Contract.findByPk(req.params.id);
       if (!contract) {
-        return res.status(404).json({ message: 'ไม่พบสัญญานี้' });
+        return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
       }
       await regenerateVisits(contract.id, contract.startDate, contract.endDate, contract.maIntervalMonths);
       visits = await MaVisit.findAll({
@@ -117,7 +139,7 @@ router.get('/:id/visits', protect, async (req, res) => {
     res.json(visits);
   } catch (error) {
     logger.error(`Get MA visits error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -126,15 +148,15 @@ router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), 
   try {
     const { scheduledDate } = req.body;
     if (!scheduledDate) {
-      return res.status(400).json({ message: 'กรุณาระบุวันที่' });
+      return res.status(400).json({ code: 'visit_date_required', message: 'Please provide a date' });
     }
 
     const visit = await MaVisit.findOne({ where: { id: req.params.visitId, contractId: req.params.id } });
     if (!visit) {
-      return res.status(404).json({ message: 'ไม่พบรอบ MA นี้' });
+      return res.status(404).json({ code: 'ma_visit_not_found', message: 'MA visit not found' });
     }
     if (visit.workOrderId) {
-      return res.status(400).json({ message: 'รอบนี้มอบหมายงานแล้ว กรุณาเลื่อนงานผ่านหน้ารายละเอียดงานแทน' });
+      return res.status(400).json({ code: 'visit_already_assigned_reschedule_hint', message: 'This visit is already assigned — reschedule it from the job detail page instead' });
     }
 
     visit.scheduledDate = scheduledDate;
@@ -143,7 +165,7 @@ router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), 
     res.json(visit);
   } catch (error) {
     logger.error(`Update MA visit error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -152,25 +174,25 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
   try {
     const { technicianId } = req.body;
     if (!technicianId) {
-      return res.status(400).json({ message: 'กรุณาเลือกช่างผู้รับผิดชอบ' });
+      return res.status(400).json({ code: 'technician_required', message: 'Please select a technician' });
     }
 
     const visit = await MaVisit.findOne({ where: { id: req.params.visitId, contractId: req.params.id } });
     if (!visit) {
-      return res.status(404).json({ message: 'ไม่พบรอบ MA นี้' });
+      return res.status(404).json({ code: 'ma_visit_not_found', message: 'MA visit not found' });
     }
     if (visit.workOrderId) {
-      return res.status(400).json({ message: 'รอบ MA นี้มอบหมายงานไปแล้ว' });
+      return res.status(400).json({ code: 'visit_already_assigned', message: 'This MA visit has already been assigned' });
     }
 
     const technician = await User.findByPk(technicianId);
     if (!technician) {
-      return res.status(404).json({ message: 'ไม่พบผู้ใช้งานนี้' });
+      return res.status(404).json({ code: 'user_not_found', message: 'User not found' });
     }
 
     const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
     if (!contract) {
-      return res.status(404).json({ message: 'ไม่พบสัญญานี้' });
+      return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
     }
 
     const workOrder = await createWorkOrder({
@@ -192,7 +214,7 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
     res.status(201).json(visit);
   } catch (error) {
     logger.error(`Assign MA visit error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -202,12 +224,12 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
     const { hospitalId, contractNumber, startDate, endDate, maIntervalMonths } = req.body;
     const validationError = validateBody(req.body);
     if (validationError) {
-      return res.status(400).json({ message: validationError });
+      return res.status(400).json(validationError);
     }
 
     const hospital = await Hospital.findByPk(hospitalId);
     if (!hospital) {
-      return res.status(404).json({ message: 'ไม่พบโรงพยาบาลนี้' });
+      return res.status(404).json({ code: 'hospital_not_found', message: 'Hospital not found' });
     }
 
     const interval = parseInt(maIntervalMonths);
@@ -225,7 +247,7 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
     res.status(201).json(contract);
   } catch (error) {
     logger.error(`Create contract error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 
@@ -235,17 +257,17 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
     const { hospitalId, contractNumber, startDate, endDate, maIntervalMonths } = req.body;
     const validationError = validateBody(req.body);
     if (validationError) {
-      return res.status(400).json({ message: validationError });
+      return res.status(400).json(validationError);
     }
 
     const contract = await Contract.findByPk(req.params.id);
     if (!contract) {
-      return res.status(404).json({ message: 'ไม่พบสัญญานี้' });
+      return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
     }
 
     const hospital = await Hospital.findByPk(hospitalId);
     if (!hospital) {
-      return res.status(404).json({ message: 'ไม่พบโรงพยาบาลนี้' });
+      return res.status(404).json({ code: 'hospital_not_found', message: 'Hospital not found' });
     }
 
     const interval = parseInt(maIntervalMonths);
@@ -270,7 +292,7 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
     res.json(contract);
   } catch (error) {
     logger.error(`Update contract error: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    sendServerError(res);
   }
 });
 

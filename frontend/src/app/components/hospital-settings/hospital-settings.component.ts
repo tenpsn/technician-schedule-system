@@ -240,7 +240,7 @@ export class HospitalSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.saving = false;
         this.cdr.detectChanges();
       }
@@ -270,7 +270,7 @@ export class HospitalSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.editSaving = false;
         this.cdr.detectChanges();
       }
@@ -294,7 +294,7 @@ export class HospitalSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.deleteTarget = null;
         this.cdr.detectChanges();
       }

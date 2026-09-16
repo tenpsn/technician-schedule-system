@@ -244,7 +244,7 @@ export class UserSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.saving = false;
         this.cdr.detectChanges();
       }
@@ -261,7 +261,7 @@ export class UserSettingsComponent implements OnInit {
       },
       error: (err) => {
         u.role = previous;
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.cdr.detectChanges();
       }
     });
@@ -287,7 +287,7 @@ export class UserSettingsComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(err.error?.message || 'Error');
+        this.toastr.error(this.i18n.errorMessage(err));
         this.toggleTarget = null;
         this.cdr.detectChanges();
       }
