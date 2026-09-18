@@ -80,17 +80,16 @@ export class AuthService {
     const user = this.currentUser;
     if (!user) return false;
     if (user.token && this.isTokenExpired(user.token)) {
-      // Route guards only check isAuthenticated, so without this an expired
-      // session would render a protected page before the first API call
-      // 401s and the interceptor kicks it back to login.
+      // route guard เช็คแค่ isAuthenticated ถ้าไม่มีบรรทัดนี้ session ที่หมดอายุ
+      // จะเข้าหน้าที่ป้องกันไว้ได้ก่อน จนกว่า API call แรกจะโดน 401 แล้ว interceptor เด้งกลับ login
       this.logout();
       return false;
     }
     return true;
   }
 
-  // Reads the JWT's exp claim client-side — no signature check, just enough
-  // to avoid showing protected UI with a token the server will reject anyway.
+  // อ่าน exp claim ของ JWT ฝั่ง client เฉยๆ ไม่เช็ค signature แค่พอกันไม่ให้
+  // โชว์ UI ที่ป้องกันไว้ด้วย token ที่ server จะปฏิเสธอยู่แล้ว
   private isTokenExpired(token: string): boolean {
     const payload = this.decodeJwtPayload(token);
     if (!payload || typeof payload.exp !== 'number') return false;

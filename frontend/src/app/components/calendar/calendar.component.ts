@@ -121,7 +121,7 @@ import { Router } from '@angular/router';
             <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
               <div class="queue-row">
                 <span class="mono">{{ o.srNumber }}</span>
-                <span class="mono">{{ o.plannedDate | localDate:'d MMM' }}</span>
+                <span class="mono">{{ o.plannedDate | localDate:'d MMM':'UTC' }}</span>
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
               <div class="queue-sub">{{ i18n.typeLabel(o.workType) }} · {{ o.technician?.fullName }}</div>
@@ -160,7 +160,7 @@ import { Router } from '@angular/router';
             <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
               <div class="queue-row">
                 <span class="mono">{{ o.srNumber }}</span>
-                <span class="mono">{{ o.plannedDate | localDate:'d MMM' }}</span>
+                <span class="mono">{{ o.plannedDate | localDate:'d MMM':'UTC' }}</span>
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
               <div class="queue-sub">{{ i18n.typeLabel(o.workType) }}</div>
@@ -486,7 +486,7 @@ export class CalendarComponent implements OnInit {
     }
   }
 
-  // --- filters -------------------------------------------------------
+  // ตัวกรอง
 
   get visibleOrders(): WorkOrder[] {
     let list = this.workOrders;
@@ -505,9 +505,7 @@ export class CalendarComponent implements OnInit {
       .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime());
   }
 
-  // In "my jobs" scope, this.workOrders already only holds the current
-  // user's own orders (loaded via getMyOrders), so filtering it directly
-  // gives "my overdue jobs" without needing the supervisor-only endpoint.
+  // โหมดงานของฉัน workOrders มีแต่งานตัวเองอยู่แล้ว กรองตรงนี้ได้เลย ไม่ต้องเรียก endpoint ของ supervisor
   get myOverdueOrders(): WorkOrder[] {
     return this.workOrders
       .filter(o => o.status === 'overdue')
@@ -548,7 +546,7 @@ export class CalendarComponent implements OnInit {
     this.view = v;
   }
 
-  // --- navigation ------------------------------------------------------
+  // การเลื่อนหน้า
 
   get periodLabel(): string {
     const locale = this.i18n.lang === 'th' ? 'th-TH' : 'en-US';
@@ -646,7 +644,7 @@ export class CalendarComponent implements OnInit {
     this.view = 'day';
   }
 
-  // --- month view --------------------------------------------------------
+  // มุมมองรายเดือน
 
   get calendarDays() {
     const year = this.currentMonth.getFullYear();
@@ -674,7 +672,7 @@ export class CalendarComponent implements OnInit {
     return days;
   }
 
-  // --- week view -----------------------------------------------------
+  // มุมมองรายสัปดาห์
 
   get weekStart(): Date {
     const d = new Date(this.selectedDate);
@@ -693,7 +691,7 @@ export class CalendarComponent implements OnInit {
     });
   }
 
-  // --- day view --------------------------------------------------------
+  // มุมมองรายวัน
 
   get dayRows() {
     const ordersOnDate = this.ordersOn(this.selectedDate);
@@ -704,8 +702,8 @@ export class CalendarComponent implements OnInit {
         const hrs = orders.reduce((a, o) => a + this.durationOf(o), 0);
         return { techId: t._id, name: t.fullName, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders };
       });
-      // Jobs can be self-assigned to a supervisor/admin (not in the technician list) -
-      // add a row for any other assignee so their jobs are never silently hidden.
+      // งานอาจถูกมอบหมายให้ supervisor หรือ admin เอง ซึ่งไม่อยู่ในรายชื่อช่าง
+      // เลยเพิ่มแถวให้ผู้รับงานคนอื่นๆ ด้วย กันไม่ให้งานหายไปเงียบๆ
       const knownIds = new Set(rows.map(r => r.techId));
       const extraIds = Array.from(new Set(
         ordersOnDate.map(o => this.techIdOf(o)).filter((id): id is string => !!id && !knownIds.has(id))
@@ -733,12 +731,18 @@ export class CalendarComponent implements OnInit {
     return `${(dur / 24 * 100).toFixed(2)}%`;
   }
 
-  // --- helpers ---------------------------------------------------------
+  // ฟังก์ชันช่วย
 
   private ordersOn(d: Date): WorkOrder[] {
     return this.visibleOrders
-      .filter(o => this.isSameDay(new Date(o.plannedDate), d))
+      .filter(o => this.isSameDay(this.calendarDayOf(o.plannedDate), d))
       .sort((a, b) => this.startOf(a) - this.startOf(b));
+  }
+
+  // plannedDate เก็บเป็น UTC midnight แปลงเป็น local midnight ก่อนเทียบวันในปฏิทิน กันเพี้ยนข้าม timezone
+  private calendarDayOf(value: string | Date): Date {
+    const raw = new Date(value);
+    return new Date(raw.getUTCFullYear(), raw.getUTCMonth(), raw.getUTCDate());
   }
 
   private techIdOf(order: WorkOrder): string | null {

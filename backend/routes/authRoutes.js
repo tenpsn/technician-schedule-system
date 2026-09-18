@@ -9,12 +9,12 @@ const logger = require('../config/logger');
 
 const router = express.Router();
 
-// Register (Admin only)
+// สมัครผู้ใช้ สำหรับ admin เท่านั้น
 router.post('/register', protect, authorize('admin'), async (req, res) => {
   try {
     const { username, password, fullName, role, email, phone } = req.body;
 
-    // Validation
+    // ตรวจสอบข้อมูล
     if (!username || !password || !fullName) {
       return res.status(400).json({ code: 'missing_required_fields', message: 'Please provide all required fields' });
     }
@@ -24,7 +24,7 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
       return res.status(400).json({ code: 'username_exists', message: 'Username already exists' });
     }
 
-    // Hash password
+    // เข้ารหัสรหัสผ่าน
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -52,7 +52,7 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
   }
 });
 
-// Login
+// เข้าสู่ระบบ
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -64,8 +64,8 @@ router.post('/login', async (req, res) => {
     const attemptKey = username.trim().toLowerCase();
     const lockedMinutes = loginAttempts.checkLocked(attemptKey);
     if (lockedMinutes) {
-      // `message` is an English fallback for non-UI API consumers (curl, Postman);
-      // the frontend builds its own bilingual text from `code` + `lockedMinutes`.
+      // message เป็นข้อความสำรองภาษาอังกฤษสำหรับผู้ใช้ API ที่ไม่ผ่าน UI เช่น curl หรือ Postman
+      // ฝั่ง frontend จะสร้างข้อความสองภาษาเองจาก code กับ lockedMinutes
       return res.status(429).json({
         code: 'login_locked',
         lockedMinutes,
@@ -114,7 +114,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Get current user
+// ดึงข้อมูลผู้ใช้ปัจจุบัน
 router.get('/me', protect, async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id);
@@ -125,7 +125,7 @@ router.get('/me', protect, async (req, res) => {
   }
 });
 
-// Update my own profile (any authenticated user)
+// แก้ไขโปรไฟล์ตัวเอง ผู้ใช้ที่ล็อกอินแล้วทำได้ทุกคน
 router.patch('/me', protect, async (req, res) => {
   try {
     const { fullName, email, phone, password, currentPassword } = req.body;
@@ -156,14 +156,14 @@ router.patch('/me', protect, async (req, res) => {
   }
 });
 
-// Get all users (Admin/Supervisor only)
+// ดึงผู้ใช้ทั้งหมด สำหรับ admin หรือหัวหน้างานเท่านั้น
 router.get('/users', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { role, active } = req.query;
     const where = {};
     if (role) where.role = role;
     if (active === 'all') {
-      // no active filter - management page needs to see deactivated accounts too
+      // ไม่กรองสถานะ active เพราะหน้าจัดการต้องเห็นบัญชีที่ถูกปิดใช้งานด้วย
     } else if (active === 'false') {
       where.active = false;
     } else {
@@ -178,7 +178,7 @@ router.get('/users', protect, authorize('supervisor', 'admin'), async (req, res)
   }
 });
 
-// Update a user - role, active status, contact info (Admin only)
+// แก้ไขผู้ใช้ ทั้งบทบาท สถานะเปิดปิดใช้งาน และข้อมูลติดต่อ สำหรับ admin เท่านั้น
 router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);

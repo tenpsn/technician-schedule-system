@@ -1,12 +1,10 @@
-// Tracks failed login attempts per key (LINE lineUserId, or web username), to
-// slow down someone guessing a password — whether over LINE chat or the
-// regular /api/auth/login form. In-memory only — same single-process
-// assumption as utils/lineSession.js (resets on restart).
+// นับจำนวนครั้งที่ล็อกอินผิดต่อคีย์ เช่น lineUserId หรือ username เพื่อชะลอคนที่เดารหัสผ่าน ทั้งจาก LINE และฟอร์มเว็บ
+// เก็บในหน่วยความจำเท่านั้น เหมือน lineSession.js ข้อมูลจะหายเมื่อรีสตาร์ท
 const attempts = new Map();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 
-// Returns minutes remaining if locked out, otherwise null.
+// คืนจำนวนนาทีที่เหลือถ้าถูกล็อก ถ้าไม่ถูกล็อกคืนค่า null
 const checkLocked = (lineUserId) => {
   const entry = attempts.get(lineUserId);
   if (!entry || !entry.lockedUntil) return null;
@@ -17,8 +15,8 @@ const checkLocked = (lineUserId) => {
   return Math.ceil((entry.lockedUntil - Date.now()) / 60000);
 };
 
-// Returns how many attempts are left before lockout (0 means this failure
-// just triggered the lockout), so callers can warn "2 tries left" etc.
+// คืนจำนวนครั้งที่เหลือก่อนถูกล็อก ถ้าเป็น 0 แปลว่าการผิดครั้งนี้ทำให้ถูกล็อกพอดี
+// ให้ผู้เรียกใช้เตือนผู้ใช้ได้ เช่น เหลืออีก 2 ครั้ง
 const recordFailure = (lineUserId) => {
   const entry = attempts.get(lineUserId) || { count: 0, lockedUntil: null };
   entry.count += 1;

@@ -128,9 +128,7 @@ export class LoginComponent {
     });
   }
 
-  // Backend sends a language-neutral `code` (+ any data the message needs)
-  // instead of a pre-built string, so the error respects whichever language
-  // the user has the UI set to rather than always coming back in one language.
+  // backend ส่งมาเป็น code กลางๆ ไม่ผูกภาษา เพื่อให้ error แสดงตามภาษาที่ผู้ใช้เลือกไว้
   private buildLoginErrorMessage(err: any): string {
     const code = err.error?.code;
     if (code === 'login_locked') {

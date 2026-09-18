@@ -4,29 +4,9 @@ const WorkOrder = require('../models/WorkOrder');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const logger = require('../config/logger');
+const { computeOverdue } = require('../utils/overdueCalc');
 
-// A work order's deadline is its planned end time on its planned date; jobs
-// left without a specific end time are treated as due by the end of that day.
-//
-// Built entirely from UTC components rather than new Date(str) + setHours():
-// plannedDate (a DATEONLY string) parses as UTC midnight per the JS spec, but
-// setHours() sets the *local* time — mixing the two meant the computed
-// deadline silently shifted by the server process's UTC offset whenever it
-// wasn't running with TZ=Asia/Bangkok.
-const deadlineOf = (order) => {
-  const dateOnly = new Date(order.plannedDate);
-  const y = dateOnly.getUTCFullYear();
-  const m = dateOnly.getUTCMonth();
-  const d = dateOnly.getUTCDate();
-  if (order.plannedEndTime) {
-    const [hours, minutes] = order.plannedEndTime.split(':').map(Number);
-    return new Date(Date.UTC(y, m, d, hours, minutes, 0, 0));
-  }
-  return new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
-};
-
-// Run every 30 minutes — matches the web form's time picker, which only
-// offers times on the same 30-minute grid (see time-picker.component.ts).
+// รันทุก 30 นาที ให้ตรงกับตัวเลือกเวลาในฟอร์มเว็บที่มีช่วงห่างกัน 30 นาทีเท่ากัน ดู time picker component.ts
 cron.schedule('*/30 * * * *', async () => {
   logger.info('🔄 Running overdue check...');
 
@@ -40,18 +20,17 @@ cron.schedule('*/30 * * * *', async () => {
       include: [{ model: User, as: 'technician', attributes: ['id', 'fullName', 'email'] }]
     });
 
-    const overdueOrders = candidates.filter((order) => deadlineOf(order) < now);
+    const overdueOrders = candidates.filter((order) => computeOverdue(order, now).isOverdue);
 
     logger.info(`Found ${overdueOrders.length} overdue orders`);
 
     for (const order of overdueOrders) {
-      // One order's save/notification failure shouldn't abort the rest of the
-      // batch — without this, a single bad record blocks every overdue order
-      // that would have been processed after it, every run, until it's fixed.
+      // ถ้าบันทึกหรือแจ้งเตือนงานหนึ่งพัง ไม่ควรทำให้ทั้งชุดหยุดไปด้วย
+      // ไม่งั้นงานที่มีปัญหาชิ้นเดียวจะบล็อกงานอื่นที่ควรประมวลผลต่อทุกรอบจนกว่าจะแก้
       try {
-        const days = Math.floor((now - deadlineOf(order)) / (1000 * 60 * 60 * 24));
+        const { overdueDays: days } = computeOverdue(order, now);
 
-        // Only update if not already marked as overdue or if days increased
+        // อัปเดตเฉพาะตอนยังไม่ถูกตีว่าเลยกำหนด หรือจำนวนวันเพิ่มขึ้น
         if (!order.isOverdue || order.overdueDays !== days) {
           order.isOverdue = true;
           order.overdueDays = days;
@@ -60,7 +39,7 @@ cron.schedule('*/30 * * * *', async () => {
 
           logger.info(`Order ${order.srNumber} marked as overdue (${days} days)`);
 
-          // Notify technician
+          // แจ้งเตือนช่าง
           await Notification.create({
             recipientId: order.technicianId,
             type: 'overdue',
@@ -69,7 +48,7 @@ cron.schedule('*/30 * * * *', async () => {
             relatedWorkOrderId: order.id
           });
 
-          // Notify all supervisors
+          // แจ้งเตือนหัวหน้างานทุกคน
           const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
           for (const sup of supervisors) {
             await Notification.create({

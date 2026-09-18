@@ -1,6 +1,7 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const User = require('./User');
+const { computeOverdue } = require('../utils/overdueCalc');
 
 const WorkOrder = sequelize.define('WorkOrder', {
   id: {
@@ -9,7 +10,7 @@ const WorkOrder = sequelize.define('WorkOrder', {
     primaryKey: true
   },
   srNumber: {
-    // Format: SR-YYYYMM-XXXX
+    // รูปแบบเลขที่ SR ตามด้วยปีเดือนและเลขลำดับ
     type: DataTypes.STRING,
     allowNull: false,
     unique: true
@@ -27,7 +28,7 @@ const WorkOrder = sequelize.define('WorkOrder', {
     type: DataTypes.STRING,
     allowNull: false
   },
-  // 'MA' | 'ติดตั้ง' | 'ซ่อม' | free text when the user picks "อื่นๆ" on the form
+  // ค่าเป็น MA ติดตั้ง ซ่อม หรือข้อความอิสระเมื่อผู้ใช้เลือกอื่นๆ ในฟอร์ม
   workType: {
     type: DataTypes.STRING,
     allowNull: false
@@ -36,7 +37,7 @@ const WorkOrder = sequelize.define('WorkOrder', {
     type: DataTypes.STRING(1000)
   },
 
-  // Planning
+  // ส่วนวางแผน
   plannedDate: {
     type: DataTypes.DATE,
     allowNull: false
@@ -50,40 +51,39 @@ const WorkOrder = sequelize.define('WorkOrder', {
     validate: { is: /^$|^([01]\d|2[0-3]):([0-5]\d)$/ }
   },
 
-  // Actual
+  // ส่วนผลจริง
   actualDate: DataTypes.DATE,
   actualStartTime: DataTypes.STRING,
   actualEndTime: DataTypes.STRING,
   actualLocation: DataTypes.STRING,
   actualDescription: DataTypes.TEXT,
 
-  // workType === 'ซ่อม' only: whether the repair was finished, and why not if it wasn't
+  // ใช้เฉพาะตอน workType เป็นซ่อม เก็บว่าเสร็จหรือไม่ และเหตุผลถ้ายังไม่เสร็จ
   repairCompleted: DataTypes.BOOLEAN,
   repairIncompleteReason: DataTypes.TEXT,
 
-  // workType === 'ติดตั้ง' only: whether the equipment has been handed over to the customer
+  // ใช้เฉพาะตอน workType เป็นติดตั้ง เก็บว่าส่งมอบเครื่องให้ลูกค้าแล้วหรือยัง
   installationDelivered: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
 
-  // Every "log actual work" submission is appended here (a repair/installation may need
-  // several visits before it's finished), newest last. actualDate/actualStartTime/etc.
-  // above always mirror the latest entry.
+  // ทุกครั้งที่บันทึกผลจริงจะถูกเพิ่มต่อท้ายที่นี่ เพราะงานซ่อมหรือติดตั้งอาจต้องเข้างานหลายครั้งกว่าจะเสร็จ
+  // ฟิลด์ actualDate actualStartTime และอื่นๆ ด้านบนจะสะท้อนค่ารายการล่าสุดเสมอ
   actualLog: {
     type: DataTypes.JSONB,
     defaultValue: []
   },
 
-  // Status workflow
+  // สถานะขั้นตอนงาน
   status: {
     type: DataTypes.ENUM('draft', 'pending_approval', 'approved', 'in_progress',
       'completed', 'overdue', 'cancelled', 'rescheduled'),
     defaultValue: 'draft'
   },
 
-  // Approval — approvedById/approvedAt/approvalNote always mirror the latest
-  // entry in approvalHistory (a job can be re-approved after each reschedule).
+  // ส่วนอนุมัติ approvedById approvedAt approvalNote จะสะท้อนรายการล่าสุดใน approvalHistory เสมอ
+  // เพราะงานสามารถถูกอนุมัติซ้ำได้ทุกครั้งหลังเลื่อนนัด
   approvedById: {
     type: DataTypes.UUID,
     references: { model: User, key: 'id' }
@@ -95,13 +95,13 @@ const WorkOrder = sequelize.define('WorkOrder', {
     defaultValue: []
   },
 
-  // Reschedule tracking
+  // ติดตามการเลื่อนนัด
   rescheduleHistory: {
     type: DataTypes.JSONB,
     defaultValue: []
   },
 
-  // Cancellation
+  // การยกเลิก
   cancelledById: {
     type: DataTypes.UUID,
     references: { model: User, key: 'id' }
@@ -109,14 +109,14 @@ const WorkOrder = sequelize.define('WorkOrder', {
   cancelledAt: DataTypes.DATE,
   cancelReason: DataTypes.TEXT,
 
-  // Documents
+  // เอกสาร
   serviceReportUrl: DataTypes.STRING,
   photos: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: []
   },
 
-  // Overdue flag
+  // สถานะเลยกำหนด
   isOverdue: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
@@ -140,8 +140,7 @@ WorkOrder.belongsTo(User, { as: 'technician', foreignKey: 'technicianId' });
 WorkOrder.belongsTo(User, { as: 'approvedBy', foreignKey: 'approvedById' });
 WorkOrder.belongsTo(User, { as: 'cancelledBy', foreignKey: 'cancelledById' });
 
-// Mirror Mongoose's populate behavior: field holds either the raw id
-// or the populated User object, under the same key either way.
+// เลียนแบบพฤติกรรม populate ของ Mongoose ฟิลด์เก็บได้ทั้ง id ดิบหรือ object User ที่โหลดมาแล้ว ภายใต้ key เดียวกัน
 WorkOrder.prototype.toJSON = function () {
   const values = { ...this.get() };
   values._id = values.id;
@@ -156,6 +155,12 @@ WorkOrder.prototype.toJSON = function () {
   mapRef('technician', 'technicianId');
   mapRef('approvedBy', 'approvedById');
   mapRef('cancelledBy', 'cancelledById');
+
+  // isOverdue กับ overdueDays ที่เก็บไว้เป็นแค่ snapshot จาก cron ครั้งล่าสุด ดู overdueCalc.js
+  // คำนวณสดตรงนี้ใหม่ทุกครั้ง เพื่อให้ response ตรงกับเวลาที่ผ่านไปจริง ไม่ใช่ค่าที่ค้างมาตั้งแต่แรกเลยกำหนด
+  const { isOverdue, overdueDays } = computeOverdue(values);
+  values.isOverdue = isOverdue;
+  values.overdueDays = overdueDays;
 
   return values;
 };

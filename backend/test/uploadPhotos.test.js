@@ -47,7 +47,7 @@ afterAll(async () => {
   try {
     await sequelize.drop();
   } catch (error) {
-    // known dialect quirk, harmless — see cancelWorkOrder.test.js
+    // ปัญหา quirk ที่รู้อยู่แล้ว ไม่มีผลอะไร ดู cancelWorkOrder.test.js
   }
   await sequelize.close();
 });

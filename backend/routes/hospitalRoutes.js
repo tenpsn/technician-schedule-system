@@ -8,12 +8,11 @@ const logger = require('../config/logger');
 
 const router = express.Router();
 
-// ILIKE treats %, _ and \ as pattern metacharacters even though Sequelize
-// parameterizes the value — escape them so a search term containing one of
-// these matches literally instead of being reinterpreted as a wildcard.
+// ILIKE ตีความ % กับ _ เป็น wildcard ถึงแม้ Sequelize จะกัน SQL injection แล้วก็ตาม
+// ต้อง escape ก่อน ไม่งั้นคำค้นที่มีตัวอักษรพวกนี้จะแมตช์ผิดความหมาย
 const escapeLikePattern = (str) => str.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-// List / search hospitals (search = autocomplete, no search = full list for management)
+// ดึงหรือค้นหารายชื่อโรงพยาบาล มีคำค้นคือ autocomplete ไม่มีคำค้นคือดึงทั้งหมดสำหรับหน้าจัดการ
 router.get('/', protect, async (req, res) => {
   try {
     const { search, limit } = req.query;
@@ -32,7 +31,7 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// Add a new hospital (Supervisor/Admin only)
+// เพิ่มโรงพยาบาลใหม่ สำหรับหัวหน้างานหรือ admin เท่านั้น
 router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { name, address, facilityCode } = req.body;
@@ -54,7 +53,7 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
   }
 });
 
-// Edit a hospital (Supervisor/Admin only)
+// แก้ไขโรงพยาบาล สำหรับหัวหน้างานหรือ admin เท่านั้น
 router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { name, address, facilityCode } = req.body;
@@ -80,7 +79,7 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
   }
 });
 
-// Delete a hospital (Supervisor/Admin only)
+// ลบโรงพยาบาล สำหรับหัวหน้างานหรือ admin เท่านั้น
 router.delete('/:id', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const hospital = await Hospital.findByPk(req.params.id);

@@ -1,7 +1,5 @@
-// Thai government public holidays that fall on the same date every year.
-// Lunar-calendar holidays (Makha Bucha, Visakha Bucha, Asalha Bucha, Buddhist Lent)
-// are intentionally left out for now — their Gregorian date changes every year and
-// needs to be confirmed against the official calendar rather than hardcoded here.
+// วันหยุดราชการไทยที่ตรงกับวันเดียวกันทุกปี
+// วันหยุดตามจันทรคติ เช่น มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา ยังไม่ใส่ไว้เพราะวันเปลี่ยนทุกปี ต้องเช็คจากปฏิทินทางการก่อน
 const FIXED_HOLIDAYS_MMDD = [
   '01-01', // วันขึ้นปีใหม่
   '04-06', // วันจักรี
@@ -41,7 +39,7 @@ function addDays(dateStr, days) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Rolls a date forward to the next day that isn't a weekend or fixed holiday.
+// เลื่อนวันไปข้างหน้าจนกว่าจะเจอวันที่ไม่ใช่วันหยุดเสาร์อาทิตย์หรือวันหยุดประจำปี
 function nextBusinessDay(dateStr) {
   let current = dateStr;
   while (isNonBusinessDay(current)) {

@@ -8,7 +8,7 @@ import { UserService } from '../../services/user.service';
 import { I18nService } from '../../services/i18n.service';
 import { SelectOption } from '../select/select.component';
 
-// startDate/endDate are "YYYY-MM-DD" strings — safe to compare lexicographically.
+// startDate และ endDate เป็น string รูปแบบปีเดือนวัน เทียบกันแบบ string ตรงๆ ได้เลย
 function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
   const start = group.get('startDate')?.value;
   const end = group.get('endDate')?.value;
@@ -86,8 +86,8 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
               <tr *ngFor="let c of filteredContracts">
                 <td>{{ c.hospital?.name }}</td>
                 <td class="muted">{{ c.contractNumber }}</td>
-                <td class="muted">{{ c.startDate | localDate:'dd/MM/yyyy' }}</td>
-                <td class="muted">{{ c.endDate | localDate:'dd/MM/yyyy' }}</td>
+                <td class="muted">{{ c.startDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
+                <td class="muted">{{ c.endDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
                 <td class="muted">{{ maLabel(c.maIntervalMonths) }}</td>
                 <td><span class="status-badge" [ngClass]="'status-' + contractStatus(c)">{{ statusLabel(c) }}</span></td>
                 <td class="actions-cell">
@@ -168,7 +168,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                   <ng-container *ngIf="!v.workOrder; else staticDate">
                     <app-date-picker [ngModel]="v.scheduledDate" (ngModelChange)="onVisitDateChange(v, $event)"></app-date-picker>
                   </ng-container>
-                  <ng-template #staticDate>{{ v.scheduledDate | localDate:'dd/MM/yyyy' }}</ng-template>
+                  <ng-template #staticDate>{{ v.scheduledDate | localDate:'dd/MM/yyyy':'UTC' }}</ng-template>
                 </span>
 
                 <span class="v-tech">
@@ -389,8 +389,9 @@ export class ContractSettingsComponent implements OnInit {
   }
 
   contractStatus(c: Contract): 'active' | 'expiring' | 'expired' {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // endDate parse เป็น UTC midnight สร้างวันนี้แบบเดียวกัน กันนับวันเพี้ยนข้าม timezone
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
     const end = new Date(c.endDate);
     const diffDays = Math.floor((end.getTime() - today.getTime()) / 86400000);
     if (diffDays < 0) return 'expired';

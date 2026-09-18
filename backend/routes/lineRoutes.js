@@ -10,6 +10,7 @@ const { saveCompressedPhoto } = require('../middleware/upload');
 const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = require('../utils/lineJobParser');
 const lineSession = require('../utils/lineSession');
 const loginAttempts = require('../utils/loginAttempts');
+const { formatThaiDate } = require('../utils/dateFormat');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -46,9 +47,7 @@ const ADD_JOB_PROMPTS = {
   description: 'รายละเอียดงาน (ถ้าไม่มีพิมพ์ - หรือ ข้าม)'
 };
 
-// Aborts whichever step-by-step flow is in progress. Deliberately not "ยกเลิก"
-// (which now also means "cancel this job" as its own command) to avoid the two
-// being confused for each other.
+// ใช้หยุดขั้นตอนทีละขั้นที่กำลังทำอยู่ จงใจไม่ใช้คำว่ายกเลิกเพราะซ้ำกับคำสั่งยกเลิกงานอีกตัว กันสับสน
 const ABORT_KEYWORDS = ['หยุด'];
 const SKIP_KEYWORDS = ['ข้าม', 'ไม่มี', 'ไม่ระบุ', '-', 'skip'];
 const isSkip = (value) => SKIP_KEYWORDS.includes(value.toLowerCase());
@@ -113,9 +112,8 @@ const verifySignature = (req) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const REPLY_MAX_ATTEMPTS = 3;
 
-// This office network's DNS resolution for api.line.me is intermittently
-// flaky — it can time out and then succeed moments later — so a single
-// immediate retry isn't reliable enough; wait a bit and try a few times.
+// DNS ของ api.line.me ในเน็ตเวิร์กออฟฟิศนี้บางครั้งหลุดแล้วกลับมาใช้ได้เอง
+// retry รอบเดียวทันทีไม่พอ ต้องรอสักครู่แล้วลองใหม่หลายรอบ
 const replyText = async (replyToken, text, attempt = 1) => {
   let res;
   try {
@@ -126,8 +124,8 @@ const replyText = async (replyToken, text, attempt = 1) => {
         Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
       },
       body: JSON.stringify({ replyToken, messages: [{ type: 'text', text }] }),
-      // Without this, a stalled DNS lookup hangs for ~10s before undici gives
-      // up on its own — fail faster so a retry has time to actually help.
+      // ถ้าไม่ตั้ง timeout นี้ DNS ที่ค้างจะรอ undici ประมาณ 10 วินาทีกว่าจะยอมแพ้เอง
+      // ตั้งให้ fail เร็วขึ้นเพื่อให้ retry มีเวลาช่วยจริง
       signal: AbortSignal.timeout(5000)
     });
   } catch (error) {
@@ -145,9 +143,8 @@ const replyText = async (replyToken, text, attempt = 1) => {
 };
 
 const finishLogin = async (user, lineUserId, replyToken) => {
-  // lineUserId is unique, so switching which account this LINE user is linked
-  // to requires releasing it from whoever held it before, or the save below
-  // fails with a unique-constraint validation error.
+  // lineUserId เป็นค่า unique ถ้าจะเปลี่ยนบัญชีที่ผูกไว้ต้องปลดจากบัญชีเดิมก่อน
+  // ไม่งั้น save ด้านล่างจะพังเพราะ unique constraint
   await User.update({ lineUserId: null }, { where: { lineUserId, id: { [Op.ne]: user.id } } });
 
   user.lineUserId = lineUserId;
@@ -158,9 +155,8 @@ const finishLogin = async (user, lineUserId, replyToken) => {
     `เชื่อมบัญชีสำเร็จ ✅ สวัสดีคุณ ${user.fullName}\n\n${HELP_TEXT}${roleHelp}\n\n${LOGIN_SWITCH_TEXT}`);
 };
 
-// Deliberately the same message whether the username doesn't exist or the
-// password was wrong — telling them apart lets an attacker enumerate which
-// usernames are real accounts. Only the near-lockout warning changes.
+// จงใจใช้ข้อความเดียวกันไม่ว่าจะเป็นชื่อผู้ใช้ผิดหรือรหัสผ่านผิด กันคนร้ายไล่เดาว่าชื่อไหนมีจริง
+// มีแค่คำเตือนใกล้ถูกล็อกที่จะต่างออกไป
 const buildLoginFailMessage = (remainingAttempts) => {
   const base = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
   if (remainingAttempts > 0 && remainingAttempts <= 2) {
@@ -169,7 +165,7 @@ const buildLoginFailMessage = (remainingAttempts) => {
   return base;
 };
 
-// One-shot format: "login <username> <password>" on a single line.
+// รูปแบบพิมพ์รวดเดียว login ตามด้วยชื่อผู้ใช้และรหัสผ่านในบรรทัดเดียว
 const handleLinkAccount = async (text, lineUserId, replyToken) => {
   const lockedMinutes = loginAttempts.checkLocked(lineUserId);
   if (lockedMinutes) {
@@ -191,7 +187,7 @@ const handleLinkAccount = async (text, lineUserId, replyToken) => {
   return finishLogin(user, lineUserId, replyToken);
 };
 
-// Step-by-step format: bare "login" starts a session asking username then password.
+// รูปแบบทีละขั้น พิมพ์ login เฉยๆ จะเริ่มถามชื่อผู้ใช้แล้วตามด้วยรหัสผ่าน
 const startLoginSession = (lineUserId, replyToken) => {
   const lockedMinutes = loginAttempts.checkLocked(lineUserId);
   if (lockedMinutes) {
@@ -218,7 +214,7 @@ const handleLoginStep = async (text, lineUserId, replyToken, session) => {
     return replyText(replyToken, LOGIN_PROMPTS.password);
   }
 
-  // step === 'password'
+  // ขั้นตอนรหัสผ่าน
   lineSession.clear(lineUserId);
   const lockedMinutes = loginAttempts.checkLocked(lineUserId);
   if (lockedMinutes) {
@@ -234,13 +230,8 @@ const handleLoginStep = async (text, lineUserId, replyToken, session) => {
   return finishLogin(user, lineUserId, replyToken);
 };
 
-// The hospital master list only stores a short name (e.g. "ท่าวังผ่า") and
-// address, so "ลูกค้า" typed in the LINE message is matched against it to
-// fill in "สถานที่" automatically when the technician leaves it out.
-// ILIKE treats %, _ and \ as pattern metacharacters even though Sequelize
-// parameterizes the value (that only stops SQL injection, not Postgres
-// reinterpreting stray %/_ typed by the technician as wildcards) — escape
-// them so a customer name like "50%" matches literally, not as "any chars".
+// รายชื่อโรงพยาบาลหลักเก็บแค่ชื่อย่อกับที่อยู่ เอาชื่อลูกค้าที่พิมพ์มาเทียบเพื่อเติมสถานที่ให้อัตโนมัติ
+// ต้อง escape ตัวอักษร % และ _ ก่อนเพราะ ILIKE ตีความเป็น wildcard ถึงแม้ Sequelize จะกัน SQL injection แล้วก็ตาม
 const escapeLikePattern = (str) => str.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 const findHospitalMatch = async (customerName) => {
@@ -265,10 +256,10 @@ const finishAddJob = async (technician, data, replyToken) => {
   }
   return replyText(replyToken,
     `เพิ่มงานสำเร็จ ✅\nเลขที่: ${workOrder.srNumber}\nลูกค้า: ${workOrder.customerName}\n` +
-    `วันที่: ${data.plannedDate.toLocaleDateString('th-TH')}\n\nสถานะ: รอหัวหน้าอนุมัติ`);
+    `วันที่: ${formatThaiDate(data.plannedDate)}\n\nสถานะ: รอหัวหน้าอนุมัติ`);
 };
 
-// One-shot format: all fields in a single labeled message.
+// รูปแบบพิมพ์รวดเดียว กรอกทุกฟิลด์พร้อมป้ายกำกับในข้อความเดียว
 const handleAddJob = async (text, technician, replyToken) => {
   const result = parseAddJobMessage(text);
 
@@ -294,7 +285,7 @@ const handleAddJob = async (text, technician, replyToken) => {
   return finishAddJob(technician, result.data, replyToken);
 };
 
-// Step-by-step format: bare "เพิ่มงาน" starts a session, then one field per reply.
+// รูปแบบทีละขั้น พิมพ์เพิ่มงานเฉยๆ จะเริ่ม session แล้วถามทีละฟิลด์
 const startAddJobSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'addJob', step: 'customerName', data: {} });
   return replyText(replyToken,
@@ -364,7 +355,7 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
   }
 
   if (step === 'plannedTime') {
-    // Required — unlike the other optional fields, ข้าม/ไม่มี is not accepted here.
+    // ฟิลด์นี้บังคับกรอก ไม่รับข้ามหรือไม่มี เหมือนฟิลด์อื่นที่เป็นตัวเลือก
     const range = parseTimeRange(value);
     if (!range) {
       return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง กรุณาระบุเวลา (HH:MM-HH:MM) เช่น 09:00-12:00');
@@ -375,14 +366,13 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
     return replyText(replyToken, ADD_JOB_PROMPTS.description);
   }
 
-  // step === 'description'
+  // ขั้นตอนรายละเอียด
   if (!isSkip(value)) data.description = value;
   lineSession.clear(lineUserId);
   return finishAddJob(technician, data, replyToken);
 };
 
-// Shown once a job is found by SR number, so the technician can confirm it's
-// the right job (same customer + site) before continuing the flow.
+// แสดงหลังเจองานจาก SR number ให้ช่างเช็คว่าใช่งานที่ต้องการก่อนทำขั้นต่อไป
 const orderSummaryLines = (order) =>
   `เลขที่: ${order.srNumber}\nลูกค้า: ${order.customerName}\nสถานที่: ${order.customerLocation}`;
 
@@ -420,7 +410,7 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
     data.orderId = order.id;
     lineSession.set(lineUserId, { flow: 'reschedule', step: 'newDate', data });
     return replyText(replyToken,
-      `${orderSummaryLines(order)}\nวันที่เดิม: ${new Date(order.plannedDate).toLocaleDateString('th-TH')}\n\n${RESCHEDULE_PROMPTS.newDate}`);
+      `${orderSummaryLines(order)}\nวันที่เดิม: ${formatThaiDate(order.plannedDate)}\n\n${RESCHEDULE_PROMPTS.newDate}`);
   }
 
   if (step === 'newDate') {
@@ -433,7 +423,7 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
     return replyText(replyToken, RESCHEDULE_PROMPTS.reason);
   }
 
-  // step === 'reason'
+  // ขั้นตอนเหตุผล
   lineSession.clear(lineUserId);
   const order = await WorkOrder.findByPk(data.orderId);
   if (!order) {
@@ -447,7 +437,7 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
     return replyText(replyToken, error.message);
   }
   return replyText(replyToken,
-    `เลื่อนงาน ${order.srNumber} สำเร็จ ✅\nวันที่ใหม่: ${data.newDate.toLocaleDateString('th-TH')}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
+    `เลื่อนงาน ${order.srNumber} สำเร็จ ✅\nวันที่ใหม่: ${formatThaiDate(data.newDate)}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
 };
 
 const startCancelJobSession = (lineUserId, replyToken) => {
@@ -488,7 +478,7 @@ const handleCancelJobStep = async (text, technician, lineUserId, replyToken, ses
     return replyText(replyToken, `${orderSummaryLines(order)}\n\n${CANCEL_JOB_PROMPTS.reason}`);
   }
 
-  // step === 'reason'
+  // ขั้นตอนเหตุผล
   lineSession.clear(lineUserId);
   const order = await WorkOrder.findByPk(data.orderId, { include: [{ model: User, as: 'technician' }] });
   if (!order) {
@@ -590,9 +580,8 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
     data.actualEndTime = range.end;
     lineSession.set(lineUserId, { flow: 'actual', step: 'actualLocation', data });
 
-    // Show the location already on file so the technician can just confirm it
-    // (พิมพ์ ข้าม) instead of retyping the same address, but still let them
-    // override it with a new one if the actual site differed from the plan.
+    // โชว์สถานที่เดิมที่มีอยู่แล้ว ให้ช่างพิมพ์ข้ามเพื่อยืนยันได้เลยโดยไม่ต้องพิมพ์ใหม่
+    // แต่ถ้าสถานที่จริงต่างจากแผน ก็แก้เป็นค่าใหม่ได้
     const prompt = data.customerLocation
       ? `${ACTUAL_PROMPTS.actualLocation}\nค่าปัจจุบัน: ${data.customerLocation}\n(พิมพ์ ข้าม เพื่อใช้ค่าเดิม หรือพิมพ์สถานที่ใหม่)`
       : ACTUAL_PROMPTS.actualLocation;
@@ -636,7 +625,7 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
     return finishActualWork(lineUserId, technician, data, replyToken);
   }
 
-  // step === 'installationDelivered'
+  // ขั้นตอนส่งมอบเครื่อง
   if (value === '1') {
     data.installationDelivered = true;
   } else if (value === '2') {
@@ -673,8 +662,7 @@ const handleApprove = async (text, approver, replyToken) => {
 const LINE_CONTENT_URL = (messageId) => `https://api-data.line.me/v2/bot/message/${messageId}/content`;
 const MAX_PHOTOS_PER_SESSION = 10;
 
-// Images are bigger than the text replies replyText() sends, so give the
-// content download more headroom than the 5s used for a reply.
+// รูปภาพมีขนาดใหญ่กว่าข้อความที่ replyText ส่ง เลยตั้ง timeout โหลดไฟล์นานกว่า 5 วินาทีที่ใช้ตอบข้อความ
 const downloadLineImage = async (messageId) => {
   const res = await fetch(LINE_CONTENT_URL(messageId), {
     headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` },
@@ -692,9 +680,8 @@ const startPhotoSession = (lineUserId, replyToken) => {
     `ส่งรูปหน้างาน 📷 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\nพิมพ์เลขที่งานที่จะแนบรูป เช่น SR-202609-0034`);
 };
 
-// Handles typed messages while in the 'photo' flow: the srNumber lookup step,
-// and "จบ"/"เสร็จ" to close out the awaitingPhoto step (actual images arrive
-// as separate 'image' events, handled by handlePhotoImage below).
+// จัดการข้อความตัวอักษรระหว่างอยู่ใน flow ส่งรูป ทั้งขั้นหา srNumber และคำว่าจบหรือเสร็จ
+// ส่วนรูปจริงจะมาเป็น event image แยกต่างหาก จัดการที่ handlePhotoImage
 const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, session) => {
   const value = text.trim();
 
@@ -726,7 +713,7 @@ const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, ses
     return replyText(replyToken, `${orderSummaryLines(order)}\n\nส่งรูปมาได้เลยครับ (ส่งได้หลายรูป พิมพ์ "จบ" เมื่อเสร็จ)`);
   }
 
-  // step === 'awaitingPhoto', got text instead of an image
+  // ขั้นตอนรอรับรูป แต่ได้ข้อความแทนรูปภาพ
   if (value === 'จบ' || value === 'เสร็จ') {
     lineSession.clear(lineUserId);
     return replyText(replyToken, data.count > 0
@@ -736,9 +723,8 @@ const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, ses
   return replyText(replyToken, 'ส่งรูปภาพมาได้เลยครับ หรือพิมพ์ "จบ" เมื่อเสร็จ');
 };
 
-// Handles an incoming 'image' message while in the awaitingPhoto step. Errors
-// deliberately don't clear the session — a failed download/save shouldn't
-// force the technician to retype the SR number just to try sending again.
+// จัดการข้อความรูปภาพที่เข้ามาตอนอยู่ขั้น awaitingPhoto จงใจไม่เคลียร์ session ถ้า error
+// เพราะไม่อยากให้ช่างต้องพิมพ์เลขที่งานใหม่แค่เพราะโหลดหรือเซฟรูปพลาดครั้งเดียว
 const handlePhotoImage = async (messageId, technician, lineUserId, replyToken, session) => {
   const { data } = session;
 
@@ -750,8 +736,8 @@ const handlePhotoImage = async (messageId, technician, lineUserId, replyToken, s
     return replyText(replyToken, 'โหลดรูปจาก LINE ไม่สำเร็จ ลองส่งใหม่อีกครั้ง');
   }
 
-  // Session only carries the orderId across requests (not a live Sequelize
-  // instance), so re-fetch the order fresh for every photo.
+  // session เก็บแค่ orderId ข้าม request ไม่ใช่ instance ของ Sequelize ที่ยังใช้งานได้
+  // เลยต้องดึงข้อมูล order ใหม่ทุกครั้งที่รับรูป
   const order = await WorkOrder.findByPk(data.orderId);
   if (!order) {
     lineSession.clear(lineUserId);

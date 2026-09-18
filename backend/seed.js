@@ -11,11 +11,11 @@ const seed = async () => {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL Connected');
 
-    // Reset schema
+    // รีเซ็ตสคีมาฐานข้อมูลใหม่ทั้งหมด
     await sequelize.sync({ force: true });
     console.log('🗑️  Cleared existing data');
 
-    // Create users
+    // สร้างผู้ใช้
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash('password123', salt);
 
@@ -88,15 +88,16 @@ const seed = async () => {
 
     console.log(`✅ Created ${users.length} users`);
 
-    // Create sample work orders
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // สร้างใบงานตัวอย่าง plannedDate เก็บเป็น UTC midnight ของวันที่ต้องการ ดูรายละเอียดที่ overdueCalc.js
+    // สร้างจาก now ของเครื่องนี้เพื่อให้ตรงวันตามเวลาท้องถิ่น ไม่ฝังเวลาปัจจุบันลงไปในค่าที่เก็บ
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const tomorrow = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 1));
 
     const workOrders = await WorkOrder.bulkCreate([
       {
         srNumber: 'SR-202609-0001',
-        technicianId: users[2].id, // somchai
+        technicianId: users[2].id, // สมชาย
         customerName: 'รพ.สูงเนิน',
         customerLocation: 'สูงเนิน โคราช',
         workType: 'ติดตั้ง',
@@ -108,7 +109,7 @@ const seed = async () => {
       },
       {
         srNumber: 'SR-202609-0002',
-        technicianId: users[4].id, // bunsong
+        technicianId: users[4].id, // บุญสูง
         customerName: 'รพ.โนนสูง',
         customerLocation: 'โนนสูง โคราช',
         workType: 'MA',

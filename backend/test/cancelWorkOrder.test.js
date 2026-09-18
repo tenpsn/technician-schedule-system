@@ -15,7 +15,7 @@ beforeAll(async () => {
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash('test123', salt);
 
-  // Create technician
+  // สร้างช่าง
   const tech = await User.create({
     username: 'testtech2',
     password: hashedPassword,
@@ -24,7 +24,7 @@ beforeAll(async () => {
   });
   techId = tech.id;
 
-  // Create supervisor
+  // สร้างหัวหน้างาน
   const sup = await User.create({
     username: 'testsup2',
     password: hashedPassword,
@@ -33,19 +33,19 @@ beforeAll(async () => {
   });
   supId = sup.id;
   
-  // Login technician
+  // ล็อกอินช่าง
   const techRes = await request(app)
     .post('/api/auth/login')
     .send({ username: 'testtech2', password: 'test123' });
   techToken = techRes.body.token;
   
-  // Login supervisor
+  // ล็อกอินหัวหน้างาน
   const supRes = await request(app)
     .post('/api/auth/login')
     .send({ username: 'testsup2', password: 'test123' });
   supToken = supRes.body.token;
   
-  // Create test work order
+  // สร้างใบงานทดสอบ
   const orderRes = await request(app)
     .post('/api/work-orders')
     .set('Authorization', `Bearer ${techToken}`)
@@ -62,9 +62,8 @@ afterAll(async () => {
   try {
     await sequelize.drop();
   } catch (error) {
-    // sequelize.drop() has a known dialect quirk on some pg/sequelize
-    // version combos; the schema gets recreated via sync({force:true})
-    // on the next run regardless, so a failure here is harmless.
+    // sequelize.drop มีปัญหา quirk กับ pg บางเวอร์ชัน แต่ไม่ต้องกังวล
+    // เพราะ schema จะถูกสร้างใหม่ผ่าน sync force ตอนรันครั้งถัดไปอยู่แล้ว
   }
   await sequelize.close();
 });
@@ -83,7 +82,7 @@ describe('Cancel Work Order API', () => {
   });
 
   test('should not cancel without reason', async () => {
-    // Create new order
+    // สร้างใบงานใหม่
     const orderRes = await request(app)
       .post('/api/work-orders')
       .set('Authorization', `Bearer ${techToken}`)
@@ -142,7 +141,7 @@ describe('Cancel Work Order API', () => {
   });
 
   test('should not cancel completed order', async () => {
-    // Create and complete an order
+    // สร้างและทำให้ใบงานเสร็จ
     const orderRes = await request(app)
       .post('/api/work-orders')
       .set('Authorization', `Bearer ${techToken}`)
@@ -153,12 +152,12 @@ describe('Cancel Work Order API', () => {
         plannedDate: '2026-09-01'
       });
     
-    // Approve first
+    // อนุมัติก่อน
     await request(app)
       .patch(`/api/work-orders/${orderRes.body._id}/approve`)
       .set('Authorization', `Bearer ${supToken}`);
     
-    // Complete
+    // ทำให้เสร็จ
     await request(app)
       .patch(`/api/work-orders/${orderRes.body._id}/actual`)
       .set('Authorization', `Bearer ${techToken}`)
@@ -167,7 +166,7 @@ describe('Cancel Work Order API', () => {
         actualDescription: 'ทำงานเสร็จแล้ว'
       });
     
-    // Try to cancel
+    // ลองยกเลิก
     const res = await request(app)
       .patch(`/api/work-orders/${orderRes.body._id}/cancel`)
       .set('Authorization', `Bearer ${techToken}`)

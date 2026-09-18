@@ -1,4 +1,4 @@
-/* Global design tokens, ported from the Claude Design mockup's THEMES object. */
+/* กำหนด design token กลางของแอป ย้ายมาจาก object THEMES ใน Claude Design mockup */
 @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
@@ -127,12 +127,12 @@ button:disabled {
   font-family: 'IBM Plex Mono', monospace;
 }
 
-/* Shared modal entrance animations */
+/* แอนิเมชันตอนเปิด modal ใช้ร่วมกันทุกที่ */
 @keyframes veilIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modalIn { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes toastIn { from { opacity: 0; transform: translateX(26px) scale(0.97); } to { opacity: 1; transform: none; } }
 
-/* ngx-toastr re-skin to match the design's toast tones */
+/* ปรับสไตล์ ngx-toastr ใหม่ ให้เข้ากับโทนสี toast ของดีไซน์ */
 .toast-container .ngx-toastr {
   border-radius: 12px;
   box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26);

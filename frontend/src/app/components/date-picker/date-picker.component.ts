@@ -113,8 +113,8 @@ export class DatePickerComponent implements ControlValueAccessor, OnDestroy {
 
   private onChange: (value: string) => void = () => {};
   private onTouched: () => void = () => {};
-  // Capture-phase so a scroll inside any ancestor (e.g. a scrollable modal list)
-  // closes the panel too — scroll events don't bubble, only capture.
+  // ใช้ capture phase เพื่อให้การ scroll ใน ancestor ใดๆ เช่น modal ที่เลื่อนได้
+  // ปิด panel นี้ด้วย เพราะ scroll event ไม่ bubble ขึ้นมา ต้อง capture เท่านั้น
   private closeOnScroll = () => { if (this.open) this.open = false; };
 
   constructor(public i18n: I18nService, private elementRef: ElementRef) {
@@ -212,10 +212,7 @@ export class DatePickerComponent implements ControlValueAccessor, OnDestroy {
     }
   }
 
-  // The panel is position:fixed so it can escape any scrollable ancestor (a
-  // long list in a modal, say) without being clipped — so its coordinates are
-  // computed from the toggle button's own on-screen position, clamped to the
-  // viewport instead of assumed to fit just below/left of the field.
+  // panel เป็น position fixed หลุดออกจาก ancestor ที่เลื่อนได้ จึงต้องคำนวณตำแหน่งจากปุ่ม toggle เอง
   private positionPanel() {
     const fieldEl = this.elementRef.nativeElement.querySelector('.dp-field') as HTMLElement;
     const rect = fieldEl.getBoundingClientRect();

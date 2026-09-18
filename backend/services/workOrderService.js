@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const WorkOrder = require('../models/WorkOrder');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const { formatThaiDate } = require('../utils/dateFormat');
 const logger = require('../config/logger');
 
 const generateSRNumber = async () => {
@@ -13,8 +14,8 @@ const generateSRNumber = async () => {
   return `SR-${yearMonth}-${String(count + 1).padStart(4, '0')}`;
 };
 
-// Creates a work order and notifies supervisors. Shared by the HTTP route
-// and the LINE bot so SR numbering and the approval notification stay in sync.
+// สร้างใบงานและแจ้งเตือนหัวหน้างาน ใช้ร่วมกันทั้ง HTTP route และ LINE bot
+// เพื่อให้เลข SR และการแจ้งเตือนขออนุมัติตรงกันเสมอ
 const createWorkOrder = async ({ technician, customerName, customerLocation, workType,
   description, plannedDate, plannedStartTime, plannedEndTime }) => {
   const srNumber = await generateSRNumber();
@@ -47,24 +48,20 @@ const createWorkOrder = async ({ technician, customerName, customerLocation, wor
   return workOrder;
 };
 
-// Shared by the HTTP route and the LINE bot so a job re-approved after a
-// reschedule keeps every past approval on record instead of overwriting it.
+// ใช้ร่วมกันทั้ง HTTP route และ LINE bot เพื่อให้งานที่อนุมัติซ้ำหลังเลื่อนนัด
+// เก็บประวัติการอนุมัติเดิมไว้ทั้งหมด ไม่เขียนทับ
 const approveWorkOrder = async (order, { approvedById, approvedByName, approvalNote, actorLabel }) => {
   if (order.status !== 'pending_approval') {
     throw badRequest('Work order is not pending approval', 'not_pending_approval');
   }
 
-  // Snapshot the approver's name onto the entry itself — approvalHistory is a
-  // plain JSONB array, not a real association, so there's nothing to join
-  // against later (and this also keeps history accurate if the name changes).
+  // เก็บชื่อผู้อนุมัติลงในรายการเลยเพราะ approvalHistory เป็น JSONB ธรรมดา ไม่ใช่ association ที่ join ได้
+  // ทำให้ประวัติยังถูกต้องแม้ชื่อผู้ใช้จะเปลี่ยนภายหลัง
   const entry = { approvedById, approvedByName: approvedByName || null, approvalNote: approvalNote || null, approvedAt: new Date() };
   const approvalHistory = [...(order.approvalHistory || []), entry];
 
-  // Conditional update instead of read-then-save: two "approve" requests for
-  // the same order (a double-click, or a web click racing a LINE "อนุมัติ")
-  // both pass the status check above before either write lands if this were
-  // a plain order.save() — collapsing the check into the WHERE clause means
-  // only the first write can actually match a still-pending_approval row.
+  // ใช้ update แบบมีเงื่อนไขแทนอ่านแล้วเซฟ กันกรณีกดอนุมัติซ้ำสองครั้งพร้อมกันจากเว็บกับ LINE
+  // ใส่เงื่อนไขสถานะไว้ใน WHERE เลย จะได้มีแค่ครั้งแรกที่เขียนทับแถวที่ยัง pending_approval ได้จริง
   const [affectedCount] = await WorkOrder.update({
     status: 'approved',
     approvedById: entry.approvedById,
@@ -95,9 +92,8 @@ const approveWorkOrder = async (order, { approvedById, approvedByName, approvalN
 
 const CANCELLABLE_STATUSES = ['draft', 'pending_approval', 'approved', 'overdue', 'in_progress'];
 
-// `code`/`data` let the frontend translate the message into whichever UI
-// language the user has selected (see i18n.service.ts's errorMessage()); the
-// English `message` stays as a fallback for non-UI API consumers.
+// code กับ data ให้ frontend เอาไปแปลข้อความตามภาษาที่ผู้ใช้เลือก ดู errorMessage ใน i18n.service.ts
+// ส่วน message ภาษาอังกฤษเก็บไว้เป็นค่าสำรองสำหรับผู้ใช้ API ที่ไม่ผ่าน UI
 function badRequest(message, code, data) {
   const err = new Error(message);
   err.statusCode = 400;
@@ -106,8 +102,7 @@ function badRequest(message, code, data) {
   return err;
 }
 
-// Shared by the HTTP route and the LINE bot so reschedule history / approval
-// notifications stay in sync between the two entry points.
+// ใช้ร่วมกันทั้ง HTTP route และ LINE bot เพื่อให้ประวัติเลื่อนนัดกับการแจ้งเตือนตรงกันทั้งสองทาง
 const rescheduleWorkOrder = async (order, { newDate, reason, changedById, changedByName, actorLabel }) => {
   const fromDate = order.plannedDate;
   order.rescheduleHistory = [...(order.rescheduleHistory || []), {
@@ -132,7 +127,7 @@ const rescheduleWorkOrder = async (order, { newDate, reason, changedById, change
       recipientId: sup.id,
       type: 'rescheduled',
       title: '🔄 งานถูกเลื่อน',
-      message: `งาน ${order.srNumber} เลื่อนจาก ${new Date(fromDate).toLocaleDateString()} เป็น ${newDate}\nเหตุผล: ${reason}`,
+      message: `งาน ${order.srNumber} เลื่อนจาก ${formatThaiDate(fromDate)} เป็น ${newDate}\nเหตุผล: ${reason}`,
       relatedWorkOrderId: order.id
     });
   }
@@ -141,9 +136,8 @@ const rescheduleWorkOrder = async (order, { newDate, reason, changedById, change
   return order;
 };
 
-// order.technician must already be loaded (via association include) when
-// isOwnerCancelling is true, since the "technician asked to cancel" notification
-// text uses their name.
+// order.technician ต้องถูกโหลดมาก่อนแล้วตอน isOwnerCancelling เป็นจริง
+// เพราะข้อความแจ้งเตือนตอนช่างขอยกเลิกงานต้องใช้ชื่อช่างคนนั้น
 const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCancelling, isSupervisorCancelling, actorLabel }) => {
   if (!CANCELLABLE_STATUSES.includes(order.status)) {
     throw badRequest(`Cannot cancel a work order with status "${order.status}"`, 'cannot_cancel_status', { status: order.status });
@@ -153,9 +147,8 @@ const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCanc
   order.cancelledById = cancelledById;
   order.cancelledAt = new Date();
   order.cancelReason = cancelReason.trim();
-  // Cancelled orders drop out of the overdue cron's candidate query same as
-  // completed ones do — nothing else would clear these, leaving a cancelled
-  // job stuck showing "overdue" next to its cancelled banner.
+  // งานที่ยกเลิกจะหลุดจากรายการที่ cron ใบงานเลยกำหนดตรวจ เหมือนงานที่เสร็จแล้ว
+  // ถ้าไม่เคลียร์ค่าตรงนี้ งานที่ยกเลิกจะยังค้างแสดงว่าเลยกำหนดอยู่
   order.isOverdue = false;
   order.overdueDays = 0;
   await order.save();
@@ -186,8 +179,8 @@ const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCanc
   return order;
 };
 
-// workType === 'ซ่อม'/'ติดตั้ง' only get their finished-or-not question; every
-// other type is considered done as soon as actual work is logged.
+// workType เป็นซ่อมหรือติดตั้งเท่านั้นที่ต้องถามว่าทำเสร็จหรือไม่
+// ประเภทอื่นถือว่าเสร็จทันทีที่บันทึกผลจริง
 const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime, actualLocation, actualDescription,
   repairCompleted, repairIncompleteReason, installationDelivered, recordedById, actorLabel }) => {
   if (!actualDescription) {
@@ -219,7 +212,7 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
   order.actualLog = [...(order.actualLog || []), logEntry];
   order.changed('actualLog', true);
 
-  // Mirror the latest entry onto the top-level actual* fields
+  // คัดลอกค่าล่าสุดไปไว้ที่ field actual ระดับบนด้วย
   order.actualDate = actualDate;
   order.actualStartTime = actualStartTime;
   order.actualEndTime = actualEndTime;
@@ -236,9 +229,8 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
   const isUnfinished = (isRepair && !repairCompleted) || (isInstallation && !logEntry.installationDelivered);
   order.status = isUnfinished ? 'approved' : 'completed';
   if (order.status === 'completed') {
-    // Completed orders drop out of the overdue cron's candidate query (it only
-    // rechecks approved/in_progress/pending_approval), so nothing else would
-    // ever clear these flags — leaving a finished job stuck showing "overdue".
+    // งานที่เสร็จแล้วจะหลุดจากรายการที่ cron ตรวจ เพราะ cron เช็คเฉพาะ approved in_progress pending_approval
+    // ถ้าไม่เคลียร์ตรงนี้ งานที่เสร็จแล้วจะยังค้างแสดงว่าเลยกำหนดอยู่
     order.isOverdue = false;
     order.overdueDays = 0;
   }
@@ -248,8 +240,7 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
   return order;
 };
 
-// Appends newly uploaded photo URLs rather than overwriting, so photos from
-// separate visits (e.g. before/after a reschedule) all stay on the order.
+// เพิ่ม URL รูปใหม่ต่อท้ายแทนการเขียนทับ เพื่อให้รูปจากหลายครั้งที่เข้างาน เช่น ก่อนและหลังเลื่อนนัด ยังอยู่ครบ
 const addPhotos = async (order, photoUrls, actorLabel) => {
   order.photos = [...(order.photos || []), ...photoUrls];
   order.changed('photos', true);

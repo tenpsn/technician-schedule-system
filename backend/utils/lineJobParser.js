@@ -9,14 +9,14 @@ const FIELD_LABELS = {
   description: 'รายละเอียด'
 };
 
-// Only true for the old one-shot format (keyword line + labeled field lines).
-// A bare "เพิ่มงาน" with nothing else starts the step-by-step flow instead.
+// เป็นจริงเฉพาะรูปแบบเก่าพิมพ์รวดเดียว คือบรรทัดคำสั่งตามด้วยฟิลด์ที่มีป้ายกำกับ
+// ถ้าพิมพ์แค่เพิ่มงานเฉยๆ จะเข้ารูปแบบทีละขั้นแทน
 const isAddJobMessage = (text) => {
   const trimmed = text.trim();
   return ADD_JOB_KEYWORD.test(trimmed) && trimmed.split('\n').length > 1;
 };
 
-// Accepts DD/MM/YYYY (Gregorian year)
+// รับรูปแบบวันเดือนปี เป็นปีคริสต์ศักราช
 const parseThaiDate = (str) => {
   const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
@@ -24,11 +24,12 @@ const parseThaiDate = (str) => {
   const day = Number(d);
   const month = Number(mo);
   const year = Number(y);
-  const date = new Date(year, month - 1, day);
-  // Date silently rolls invalid day/month combos over into the next
-  // month/year (e.g. 31/04 -> 1 May) instead of producing NaN — reject
-  // anything that didn't round-trip back to the exact date typed.
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+  // สร้างจากค่า UTC โดยตรง ไม่ใช้ new Date ปกติที่อิงเวลาท้องถิ่นของเครื่อง
+  // เพื่อให้ตรงกับ convention UTC midnight ที่ plannedDate ใช้ทั่วระบบ ดู overdueCalc.js
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // Date จะปัดวันเดือนที่ไม่มีจริงไปเป็นเดือนถัดไปแทนที่จะ error เช่น 31 เมษายนจะกลายเป็น 1 พฤษภาคม
+  // จึงต้องเช็คว่าค่าที่ได้ตรงกับวันที่พิมพ์จริงหรือไม่ ถ้าไม่ตรงถือว่าไม่ถูกต้อง
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
     return null;
   }
   return date;
@@ -40,14 +41,7 @@ const parseTimeRange = (str) => {
   return { start: `${m[1]}:${m[2]}`, end: `${m[3]}:${m[4]}` };
 };
 
-// Parses a message like:
-//   เพิ่มงาน
-//   ลูกค้า: รพ.กรุงเทพ
-//   สถานที่: ห้อง ICU ชั้น 3
-//   ประเภทงาน: ซ่อม
-//   วันที่: 20/09/2026
-//   เวลา: 09:00-12:00
-//   รายละเอียด: เครื่องมอนิเตอร์ไม่ขึ้นสัญญาณ
+// ตัวอย่างข้อความที่ฟังก์ชันนี้แปลงได้ เช่น เพิ่มงาน ตามด้วยลูกค้า สถานที่ ประเภทงาน วันที่ เวลา รายละเอียด
 const parseAddJobMessage = (text) => {
   const lines = text.split('\n').slice(1);
   const fields = {};
@@ -63,8 +57,7 @@ const parseAddJobMessage = (text) => {
     if (key) fields[key] = value;
   }
 
-  // customerLocation is intentionally not required here — when omitted, the
-  // caller looks it up from the hospital master list by customerName instead.
+  // customerLocation ไม่บังคับตรงนี้ ถ้าไม่กรอกผู้เรียกจะไปค้นจากชื่อลูกค้าในรายชื่อโรงพยาบาลแทน
   const missing = [];
   if (!fields.customerName) missing.push(FIELD_LABELS.customerName);
   if (!fields.workType) missing.push(FIELD_LABELS.workType);
@@ -88,8 +81,8 @@ const parseAddJobMessage = (text) => {
     data: {
       customerName: fields.customerName,
       customerLocation: fields.customerLocation,
-      // Stored as-is, same as the web form's "อื่นๆ" free-text field — no
-      // matching against MA/ติดตั้ง/ซ่อม, so a typo is saved verbatim.
+      // เก็บค่าตามที่พิมพ์เลย เหมือนช่องอื่นๆ แบบพิมพ์อิสระในฟอร์มเว็บ ไม่เทียบกับ MA ติดตั้ง ซ่อม
+      // ถ้าพิมพ์ผิดก็จะถูกเก็บตามที่พิมพ์ผิดนั้นเลย
       workType: fields.workType,
       description: fields.description,
       plannedDate,

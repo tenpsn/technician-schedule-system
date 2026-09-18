@@ -3,9 +3,8 @@ const { sequelize } = require('../config/database');
 const Contract = require('./Contract');
 const WorkOrder = require('./WorkOrder');
 
-// One row per scheduled MA (maintenance) visit within a contract's MA interval,
-// auto-generated from the contract's start/end date + interval, and individually
-// movable afterwards (e.g. the 2nd visit gets rescheduled to a different day).
+// หนึ่งแถวคือหนึ่งครั้งของการเข้า MA ตามช่วงเวลาของสัญญา สร้างอัตโนมัติจากวันเริ่มวันสิ้นสุดและช่วงเวลา
+// และย้ายวันทีหลังได้ทีละครั้ง เช่น เลื่อนครั้งที่ 2 ไปวันอื่น
 const MaVisit = sequelize.define('MaVisit', {
   id: {
     type: DataTypes.UUID,
@@ -25,8 +24,8 @@ const MaVisit = sequelize.define('MaVisit', {
     type: DataTypes.DATEONLY,
     allowNull: false
   },
-  // Set once a supervisor assigns this visit to a technician — the actual
-  // job then lives (and is tracked/approved/rescheduled) as a normal WorkOrder.
+  // จะถูกตั้งค่าตอนหัวหน้างานมอบหมายช่างให้ visit นี้ หลังจากนั้นงานจริงจะกลายเป็น WorkOrder ปกติ
+  // ที่ติดตาม อนุมัติ และเลื่อนนัดได้เหมือนใบงานทั่วไป
   workOrderId: {
     type: DataTypes.UUID,
     allowNull: true,

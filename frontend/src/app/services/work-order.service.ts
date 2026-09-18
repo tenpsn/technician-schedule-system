@@ -63,8 +63,8 @@ export interface WorkOrder {
 
 @Injectable({ providedIn: 'root' })
 export class WorkOrderService {
-  // environment.apiUrl ends in "/api", but uploaded photos are served from
-  // "/uploads/..." off the same origin, so strip the "/api" suffix here.
+  // environment.apiUrl ลงท้ายด้วย /api แต่รูปที่อัปโหลดเสิร์ฟจาก /uploads
+  // ที่ origin เดียวกัน เลยต้องตัด /api ออกตรงนี้
   private photoBase = environment.apiUrl.replace(/\/api\/?$/, '');
 
   constructor(private http: HttpClient, private auth: AuthService) {}
@@ -122,9 +122,8 @@ export class WorkOrderService {
   uploadPhotos(id: string, files: File[]): Observable<WorkOrder> {
     const formData = new FormData();
     files.forEach(f => formData.append('photos', f));
-    // Deliberately not using getHeaders() — its hardcoded Content-Type:
-    // application/json would stop the browser from setting the multipart
-    // boundary, breaking the upload.
+    // ตั้งใจไม่ใช้ getHeaders เพราะมัน hardcode ค่า Content Type เป็น application/json
+    // ไว้ ซึ่งจะไปกัน browser ไม่ให้ตั้งค่า multipart boundary ทำให้อัปโหลดพัง
     return this.http.patch<WorkOrder>(`${environment.apiUrl}/work-orders/${id}/photos`, formData,
       { headers: { Authorization: `Bearer ${this.auth.token}` } });
   }

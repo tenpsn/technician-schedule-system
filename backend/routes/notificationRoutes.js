@@ -7,7 +7,7 @@ const logger = require('../config/logger');
 
 const router = express.Router();
 
-// Get my notifications
+// ดึงการแจ้งเตือนของตัวเอง
 router.get('/', protect, async (req, res) => {
   try {
     const { limit = 50 } = req.query;
@@ -24,7 +24,7 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// Mark as read
+// ทำเครื่องหมายว่าอ่านแล้ว
 router.patch('/:id/read', protect, async (req, res) => {
   try {
     const notification = await Notification.findByPk(req.params.id);
@@ -47,7 +47,7 @@ router.patch('/:id/read', protect, async (req, res) => {
   }
 });
 
-// Mark all as read
+// ทำเครื่องหมายว่าอ่านแล้วทั้งหมด
 router.patch('/read-all', protect, async (req, res) => {
   try {
     await Notification.update(
@@ -61,7 +61,7 @@ router.patch('/read-all', protect, async (req, res) => {
   }
 });
 
-// Get unread count
+// ดึงจำนวนที่ยังไม่อ่าน
 router.get('/unread/count', protect, async (req, res) => {
   try {
     const count = await Notification.count({

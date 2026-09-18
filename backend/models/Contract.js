@@ -25,7 +25,7 @@ const Contract = sequelize.define('Contract', {
     type: DataTypes.DATEONLY,
     allowNull: false
   },
-  // MA (Maintenance Agreement) visit interval, in months — e.g. every 1 / 3 / 4 / 6 / 12 months
+  // ช่วงเวลาการเข้า MA ตามสัญญาบำรุงรักษา หน่วยเป็นเดือน เช่น ทุก 1 3 4 6 หรือ 12 เดือน
   maIntervalMonths: {
     type: DataTypes.INTEGER,
     allowNull: false,

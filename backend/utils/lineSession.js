@@ -1,6 +1,5 @@
-// In-memory per-technician conversation state for multi-step LINE flows
-// (e.g. answering "เพิ่มงาน" one field at a time). Lost on server restart
-// and not shared across instances — acceptable for a single-process bot.
+// เก็บสถานะการสนทนาของช่างแต่ละคนไว้ในหน่วยความจำ สำหรับขั้นตอน LINE ที่ถามทีละฟิลด์ เช่น เพิ่มงาน
+// ข้อมูลหายเมื่อรีสตาร์ทและไม่แชร์ข้าม instance ยอมรับได้เพราะบอทรันโปรเซสเดียว
 const sessions = new Map();
 const TTL_MS = 10 * 60 * 1000;
 

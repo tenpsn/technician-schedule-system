@@ -2,7 +2,7 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure logs directory exists
+// สร้างโฟลเดอร์ logs ถ้ายังไม่มี
 const logDir = path.join(__dirname, '../logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
@@ -20,7 +20,7 @@ const logger = winston.createLogger({
     new winston.transports.File({ 
       filename: path.join(logDir, 'error.log'), 
       level: 'error',
-      maxsize: 5242880, // 5MB
+      maxsize: 5242880, // ขนาดไฟล์สูงสุด 5MB
       maxFiles: 5
     }),
     new winston.transports.File({ 

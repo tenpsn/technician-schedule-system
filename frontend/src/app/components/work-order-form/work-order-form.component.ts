@@ -9,9 +9,7 @@ import { SelectOption } from '../select/select.component';
 import { ToastrService } from 'ngx-toastr';
 import { Router } from '@angular/router';
 
-// plannedStartTime/plannedEndTime are "HH:MM" strings — safe to compare
-// lexicographically. Flags the pair invalid rather than silently letting an
-// end time before the start time get saved.
+// กันไม่ให้บันทึกเวลาจบก่อนเวลาเริ่มไปเงียบๆ
 function timeRangeValidator(group: AbstractControl): ValidationErrors | null {
   const start = group.get('plannedStartTime')?.value;
   const end = group.get('plannedEndTime')?.value;
@@ -279,8 +277,8 @@ export class WorkOrderFormComponent implements OnInit {
     const { workTypeOther, ...formValue } = this.form.value;
     let description = formValue.description;
     if (formValue.workType === 'อื่นๆ' && workTypeOther) {
-      // Matches the LINE bot's "อื่นๆ" flow: workType always stays "อื่นๆ",
-      // and what the user typed is folded into the description instead.
+      // ทำตามรูปแบบเดียวกับ flow อื่นๆ ของ LINE bot คือ workType จะเป็นอื่นๆ เสมอ
+      // ส่วนที่ผู้ใช้พิมพ์มาจะถูกเก็บรวมไว้ใน description แทน
       const note = `ประเภทงาน: ${workTypeOther.trim()}`;
       description = description ? `${note}\n${description}` : note;
     }

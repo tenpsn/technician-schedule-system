@@ -14,8 +14,7 @@ const sequelize = new Sequelize(dbUrl, {
 const connectDB = async () => {
   try {
     await sequelize.authenticate();
-    // In test mode, the test suite itself owns schema sync (force: true)
-    // to avoid racing this call, which runs unawaited at server startup.
+    // ตอนเทส ชุดทดสอบเองจะเป็นคนสั่ง sync แบบ force เอง กันชนกับการเรียกตรงนี้ที่รันตอนเริ่มเซิร์ฟเวอร์แบบไม่รอ await
     if (process.env.NODE_ENV !== 'test') {
       await sequelize.sync({ alter: true });
     }

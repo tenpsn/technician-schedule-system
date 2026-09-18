@@ -53,7 +53,7 @@ const User = sequelize.define('User', {
   }
 });
 
-// Hide password when serializing
+// ซ่อนรหัสผ่านตอนแปลงเป็น JSON
 User.prototype.toJSON = function () {
   const values = { ...this.get() };
   values._id = values.id;

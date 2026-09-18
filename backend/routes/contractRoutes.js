@@ -31,10 +31,8 @@ function validateBody(body) {
   return null;
 }
 
-// Adds `months` calendar months to a 'YYYY-MM-DD' string, returning the same format.
-// Clamps to the target month's last day instead of letting it overflow (plain
-// Date.setUTCMonth would silently roll e.g. 31 Jan + 1 month into 3 Mar, since
-// Feb has no 31st) — otherwise every later visit in the schedule keeps drifting.
+// บวกจำนวนเดือนเข้ากับสตริงวันที่ปีเดือนวัน คืนค่ารูปแบบเดิม
+// ถ้าวันเกินเดือนเป้าหมายจะปรับเป็นวันสุดท้ายของเดือนนั้นแทนปล่อยให้ล้นไปเดือนถัดไป กันวันที่ของ visit ถัดๆไปเพี้ยนสะสม
 function addMonths(dateStr, months) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const totalMonths = y * 12 + (m - 1) + months;
@@ -48,11 +46,8 @@ function addMonths(dateStr, months) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Every MA visit date from startDate to endDate (inclusive), `intervalMonths` apart.
-// The total count — and so the "times per year" — falls out of the contract's own
-// date range rather than an assumed 12-month year. Each date is rolled forward to
-// the next business day when it lands on a weekend or public holiday; stepping is
-// based on the un-shifted date so that adjustment doesn't drift later occurrences.
+// สร้างวันที่เข้า MA ทุกครั้งตั้งแต่ startDate ถึง endDate ห่างกันตาม intervalMonths จำนวนครั้งต่อปีขึ้นกับช่วงสัญญาจริง ไม่ได้ตั้งสมมติฐานว่าเป็นปีละ 12 เดือน
+// ถ้าวันตกวันหยุดจะเลื่อนไปวันทำการถัดไป แต่คำนวณก้าวถัดไปจากวันที่ยังไม่เลื่อน กันวันที่ครั้งหลังๆ เพี้ยนสะสม
 function generateVisitDates(startDate, endDate, intervalMonths) {
   const dates = [];
   let current = startDate;
@@ -63,15 +58,8 @@ function generateVisitDates(startDate, endDate, intervalMonths) {
   return dates;
 }
 
-// Regenerates the MA visit schedule for a contract. Visits already assigned to a
-// technician (workOrderId set) are real jobs now — they're left untouched instead
-// of being wiped out, and only the still-unassigned placeholders are replaced.
-//
-// sequenceNo is renumbered across the WHOLE combined set (assigned + freshly
-// generated) in chronological order, not just appended after assignedCount —
-// appending after the count let an edit collide two different visits onto the
-// same sequenceNo (e.g. an assigned "#2" and a newly generated "#2" for a
-// different date) whenever an assigned visit wasn't first in the list.
+// สร้างตารางเข้า MA ใหม่ให้สัญญา visit ที่มอบหมายช่างแล้วคือ workOrderId มีค่า ถือเป็นงานจริงแล้วจะไม่ถูกลบทิ้ง มีแค่ placeholder ที่ยังไม่มอบหมายเท่านั้นที่ถูกแทนที่
+// sequenceNo จะเรียงเลขใหม่ทั้งชุดตามลำดับวันที่ ไม่ใช่ต่อท้ายชุดเดิม กันเลขซ้ำกันเมื่อ visit ที่มอบหมายแล้วไม่ได้อยู่ลำดับแรกสุด
 async function regenerateVisits(contractId, startDate, endDate, intervalMonths) {
   await MaVisit.destroy({ where: { contractId, workOrderId: null } });
   const assigned = await MaVisit.findAll({ where: { contractId } });
@@ -93,7 +81,7 @@ async function regenerateVisits(contractId, startDate, endDate, intervalMonths) 
   }));
 }
 
-// List contracts (optionally filtered by hospitalId)
+// ดึงรายการสัญญา กรองด้วย hospitalId ได้ถ้ามี
 router.get('/', protect, async (req, res) => {
   try {
     const { hospitalId } = req.query;
@@ -112,9 +100,8 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// List the MA visit schedule for one contract — backfills it from the
-// contract's dates/interval the first time it's requested, so contracts
-// created before this feature existed still get a schedule.
+// ดึงตารางเข้า MA ของสัญญาหนึ่ง ถ้ายังไม่มีจะสร้างจากวันที่และช่วงเวลาของสัญญาให้อัตโนมัติ
+// เพื่อให้สัญญาที่สร้างก่อนมีฟีเจอร์นี้ก็ยังมีตารางใช้งานได้
 router.get('/:id/visits', protect, async (req, res) => {
   try {
     let visits = await MaVisit.findAll({
@@ -143,7 +130,7 @@ router.get('/:id/visits', protect, async (req, res) => {
   }
 });
 
-// Move one MA visit to a different date (Supervisor/Admin only)
+// ย้ายวันเข้า MA ครั้งหนึ่ง สำหรับหัวหน้างานหรือ admin เท่านั้น
 router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { scheduledDate } = req.body;
@@ -169,7 +156,7 @@ router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), 
   }
 });
 
-// Assign a technician to one MA visit — creates the actual work order (Supervisor/Admin only)
+// มอบหมายช่างให้ MA ครั้งหนึ่ง จะสร้างใบงานจริงด้วย สำหรับหัวหน้างานหรือ admin เท่านั้น
 router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { technicianId } = req.body;
@@ -218,7 +205,7 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
   }
 });
 
-// Add a new contract (Supervisor/Admin only)
+// เพิ่มสัญญาใหม่ สำหรับหัวหน้างานหรือ admin เท่านั้น
 router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { hospitalId, contractNumber, startDate, endDate, maIntervalMonths } = req.body;
@@ -251,7 +238,7 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
   }
 });
 
-// Edit a contract (Supervisor/Admin only) — regenerates the MA visit schedule
+// แก้ไขสัญญา สำหรับหัวหน้างานหรือ admin เท่านั้น จะสร้างตารางเข้า MA ใหม่ด้วย
 router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { hospitalId, contractNumber, startDate, endDate, maIntervalMonths } = req.body;
@@ -280,9 +267,8 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
     contract.endDate = endDate;
     contract.maIntervalMonths = interval;
     await contract.save();
-    // Only reshuffle the MA visit schedule when the dates/interval actually
-    // moved — otherwise an edit to e.g. the contract number would silently
-    // wipe out any visit dates the user had manually rescheduled.
+    // สร้างตารางเข้า MA ใหม่เฉพาะตอนวันที่หรือช่วงเวลาเปลี่ยนจริง
+    // ไม่งั้นแค่แก้เลขที่สัญญาจะไปลบวันที่ที่ผู้ใช้เคยเลื่อนเองทิ้งโดยไม่ตั้งใจ
     if (scheduleChanged) {
       await regenerateVisits(contract.id, startDate, endDate, interval);
     }

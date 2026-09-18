@@ -198,9 +198,9 @@ interface TypeBreakdown {
               <tr *ngFor="let o of jobsOf(tech._id)" (click)="viewOrder(o._id)" class="clickable">
                 <td class="mono">{{ o.srNumber }}</td>
                 <td class="mono">
-                  {{ o.plannedDate | localDate:'dd/MM/yyyy' }}
+                  {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}
                   <div class="resched-note" *ngIf="firstRescheduleDate(o) as fromDate" [title]="i18n.t['rescheduleHistory']">
-                    ↺ {{ fromDate | localDate:'dd/MM/yyyy' }} → {{ o.plannedDate | localDate:'dd/MM/yyyy' }}
+                    ↺ {{ fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}
                     <span *ngIf="rescheduleCountOf(o) > 1">({{ i18n.t['rescheduledCountLabel'] }} {{ rescheduleCountOf(o) }} {{ i18n.t['timesWord'] }})</span>
                   </div>
                 </td>
@@ -557,8 +557,10 @@ export class TechDashboardComponent implements OnInit {
     return (order.rescheduleHistory || []).length;
   }
 
+  // actualDate และ plannedDate เก็บเป็น UTC midnight แปลงเป็น local midnight กันคนเรียกใช้ getDate ผิดวัน
   private dateOf(order: WorkOrder): Date {
-    return new Date(order.actualDate || order.plannedDate);
+    const raw = new Date(order.actualDate || order.plannedDate);
+    return new Date(raw.getUTCFullYear(), raw.getUTCMonth(), raw.getUTCDate());
   }
 
   daysWorkedCountOf(techId: string): number {

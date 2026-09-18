@@ -107,7 +107,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     installationDelivered: 'ส่งมอบเครื่องให้ลูกค้าแล้ว',
     toastNeedRepairStatus: 'กรุณาเลือกสถานะการซ่อม', toastNeedRepairReason: 'กรุณาระบุสาเหตุที่ยังซ่อมไม่เสร็จ',
     deliveredYes: 'ส่งมอบแล้ว', deliveredNo: 'ยังไม่ส่งมอบ',
-    // Backend error `code` translations — see I18nService.errorMessage()
+    // คำแปลของ error code จาก backend ดูฟังก์ชัน errorMessage ใน I18nService
     genericError: 'เกิดข้อผิดพลาด',
     missing_required_fields: 'กรุณากรอกข้อมูลให้ครบถ้วน',
     username_exists: 'มีชื่อผู้ใช้นี้อยู่แล้ว',
@@ -247,7 +247,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     installationDelivered: 'Delivered to customer',
     toastNeedRepairStatus: 'Please select the repair status', toastNeedRepairReason: 'Please state the reason it is not finished',
     deliveredYes: 'Delivered', deliveredNo: 'Not delivered yet',
-    // Backend error `code` translations — see I18nService.errorMessage()
+    // คำแปลของ error code จาก backend ดูฟังก์ชัน errorMessage ใน I18nService
     genericError: 'An error occurred',
     missing_required_fields: 'Please provide all required fields',
     username_exists: 'Username already exists',
@@ -347,10 +347,7 @@ export class I18nService {
     return TYPE_LABEL_EN[workType] || workType;
   }
 
-  // Backend sends a language-neutral `code` (+ optional `data` for messages
-  // with a dynamic value, e.g. a status name) instead of a pre-built string,
-  // so this can render the error in whichever language the user has selected
-  // rather than whatever language happened to be hardcoded into that route.
+  // backend ส่งมาเป็น code กลางๆ ไม่ผูกภาษา เพื่อให้แสดง error ตามภาษาที่ผู้ใช้เลือกไว้
   errorMessage(err: any, fallback?: string): string {
     const code = err?.error?.code;
     if (code && this.t[code]) {

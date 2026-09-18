@@ -6,6 +6,8 @@ const { protect, authorize } = require('../middleware/auth');
 const { uploadPhotos, saveCompressedPhoto, deletePhotoFile } = require('../middleware/upload');
 const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto } = require('../services/workOrderService');
 const { sendServerError } = require('../utils/httpErrors');
+const { computeOverdue } = require('../utils/overdueCalc');
+const { monthRangeUTC } = require('../utils/dateRange');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -19,13 +21,13 @@ const DETAIL_INCLUDE = [
   { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
 ];
 
-// Create Work Order (Planning)
+// สร้างใบงาน ขั้นตอนวางแผน
 router.post('/', protect, async (req, res) => {
   try {
     const { customerName, customerLocation, workType, description,
             plannedDate, plannedStartTime, plannedEndTime } = req.body;
 
-    // Validation
+    // ตรวจสอบข้อมูล
     if (!customerName || !customerLocation || !workType || !plannedDate) {
       return res.status(400).json({ code: 'missing_required_fields', message: 'Please provide all required fields' });
     }
@@ -48,16 +50,15 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-// Get my work orders
+// ดึงใบงานของตัวเอง
 router.get('/my', protect, async (req, res) => {
   try {
     const { month, year, status } = req.query;
     const where = { technicianId: req.user.id };
 
     if (month && year) {
-      const startDate = new Date(year, parseInt(month) - 1, 1);
-      const endDate = new Date(year, parseInt(month), 1);
-      where.plannedDate = { [Op.gte]: startDate, [Op.lt]: endDate };
+      const { start, end } = monthRangeUTC(year, month);
+      where.plannedDate = { [Op.gte]: start, [Op.lt]: end };
     }
 
     if (status) where.status = status;
@@ -79,16 +80,15 @@ router.get('/my', protect, async (req, res) => {
   }
 });
 
-// Get all work orders (Supervisor)
+// ดึงใบงานทั้งหมด สำหรับหัวหน้างาน
 router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { month, year, technician, status } = req.query;
     const where = {};
 
     if (year) {
-      const startDate = month ? new Date(year, parseInt(month) - 1, 1) : new Date(year, 0, 1);
-      const endDate = month ? new Date(year, parseInt(month), 1) : new Date(parseInt(year) + 1, 0, 1);
-      where.plannedDate = { [Op.gte]: startDate, [Op.lt]: endDate };
+      const { start, end } = monthRangeUTC(year, month);
+      where.plannedDate = { [Op.gte]: start, [Op.lt]: end };
     }
 
     if (technician) where.technicianId = technician;
@@ -111,7 +111,7 @@ router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) =
   }
 });
 
-// Get single work order
+// ดึงใบงานรายการเดียว
 router.get('/:id', protect, async (req, res) => {
   try {
     const order = await WorkOrder.findByPk(req.params.id, {
@@ -122,7 +122,7 @@ router.get('/:id', protect, async (req, res) => {
       return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
-    // Check permission
+    // ตรวจสอบสิทธิ์
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
@@ -137,7 +137,7 @@ router.get('/:id', protect, async (req, res) => {
   }
 });
 
-// Approve Work Order (Supervisor)
+// อนุมัติใบงาน สำหรับหัวหน้างาน
 router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { approvalNote } = req.body;
@@ -162,7 +162,7 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
   }
 });
 
-// Update Actual (Technician)
+// บันทึกผลจริง สำหรับช่าง
 router.patch('/:id/actual', protect, async (req, res) => {
   try {
     const { actualDate, actualStartTime, actualEndTime,
@@ -175,7 +175,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
       return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
-    // Check ownership
+    // ตรวจสอบว่าเป็นเจ้าของงานหรือไม่
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
@@ -199,7 +199,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
   }
 });
 
-// Upload job-site photos (Technician)
+// อัปโหลดรูปหน้างาน สำหรับช่าง
 router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
   try {
     const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
@@ -208,7 +208,7 @@ router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
       return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
-    // Check ownership
+    // ตรวจสอบว่าเป็นเจ้าของงานหรือไม่
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
@@ -223,8 +223,8 @@ router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
     const results = await Promise.allSettled(req.files.map(f => saveCompressedPhoto(order.id, f.buffer)));
     const failure = results.find(r => r.status === 'rejected');
     if (failure) {
-      // One bad file shouldn't leave the good ones behind as orphans with no
-      // order.photos reference — clean up everything this batch wrote.
+      // ถ้ามีไฟล์เสียแม้แต่ไฟล์เดียว ต้องลบไฟล์ที่อัปโหลดสำเร็จในชุดนี้ทิ้งด้วย
+      // กันไม่ให้เหลือไฟล์กำพร้าที่ไม่มีการอ้างอิงใน order.photos
       results.filter(r => r.status === 'fulfilled').forEach(r => deletePhotoFile(r.value));
       logger.error(`Photo compression error: ${failure.reason.message}`);
       return res.status(400).json({ code: 'photo_invalid', message: 'Photo file is invalid or corrupted' });
@@ -243,7 +243,7 @@ router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
   }
 });
 
-// Remove a job-site photo (Technician / Supervisor)
+// ลบรูปหน้างาน สำหรับช่างหรือหัวหน้างาน
 router.delete('/:id/photos', protect, async (req, res) => {
   try {
     const { photo } = req.body;
@@ -277,7 +277,7 @@ router.delete('/:id/photos', protect, async (req, res) => {
   }
 });
 
-// Reschedule Work Order
+// เลื่อนนัดใบงาน
 router.patch('/:id/reschedule', protect, async (req, res) => {
   try {
     const { newDate, reason } = req.body;
@@ -292,8 +292,8 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
       return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
-    // Check ownership — matches cancel/approve/actual/photos, which all allow
-    // supervisor too, not just admin (this one used to be the odd one out).
+    // ตรวจสอบว่าเป็นเจ้าของงาน ให้ตรงกับ cancel approve actual photos ที่อนุญาตหัวหน้างานด้วย
+    // ไม่ใช่แค่ admin เหมือนที่เคยเป็นมาก่อน
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = ['supervisor', 'admin'].includes(req.user.role);
     if (!isOwner && !isSupervisor) {
@@ -311,12 +311,12 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
   }
 });
 
-// Cancel Work Order
+// ยกเลิกใบงาน
 router.patch('/:id/cancel', protect, async (req, res) => {
   try {
     const { cancelReason } = req.body;
 
-    // Validate reason
+    // ตรวจสอบเหตุผล
     if (!cancelReason || cancelReason.trim() === '') {
       return res.status(400).json({ code: 'cancel_reason_required', message: 'Please state a reason for cancelling' });
     }
@@ -327,7 +327,7 @@ router.patch('/:id/cancel', protect, async (req, res) => {
       return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
 
-    // Check permission: owner or supervisor/admin
+    // ตรวจสอบสิทธิ์ ต้องเป็นเจ้าของงานหรือหัวหน้างานหรือ admin
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
 
@@ -357,14 +357,17 @@ router.patch('/:id/cancel', protect, async (req, res) => {
   }
 });
 
-// Get overdue work orders
+// ดึงใบงานที่เลยกำหนด
 router.get('/status/overdue', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const orders = await WorkOrder.findAll({
       where: { status: 'overdue', isOverdue: true },
-      include: [{ model: User, as: 'technician', attributes: TECHNICIAN_ATTRS }],
-      order: [['overdueDays', 'DESC']]
+      include: [{ model: User, as: 'technician', attributes: TECHNICIAN_ATTRS }]
     });
+
+    // overdueDays ในฐานข้อมูลเป็นค่า snapshot จาก cron ครั้งล่าสุด อาจไม่ตรงกับปัจจุบันแล้ว
+    // จึงเรียงลำดับด้วยค่าที่คำนวณสดจาก computeOverdue แทนค่าที่เก็บไว้ ดู overdueCalc.js
+    orders.sort((a, b) => computeOverdue(b).overdueDays - computeOverdue(a).overdueDays);
 
     res.json(orders);
   } catch (error) {
@@ -373,16 +376,15 @@ router.get('/status/overdue', protect, authorize('supervisor', 'admin'), async (
   }
 });
 
-// Get cancelled work orders (for report/history)
+// ดึงใบงานที่ถูกยกเลิก สำหรับรายงานและประวัติ
 router.get('/status/cancelled', protect, authorize('supervisor', 'admin'), async (req, res) => {
   try {
     const { month, year } = req.query;
     const where = { status: 'cancelled' };
 
     if (month && year) {
-      const startDate = new Date(year, parseInt(month) - 1, 1);
-      const endDate = new Date(year, parseInt(month), 1);
-      where.cancelledAt = { [Op.gte]: startDate, [Op.lt]: endDate };
+      const { start, end } = monthRangeUTC(year, month);
+      where.cancelledAt = { [Op.gte]: start, [Op.lt]: end };
     }
 
     const orders = await WorkOrder.findAll({

@@ -54,7 +54,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="section">
             <div class="section-title">{{ i18n.t['planning'] }}</div>
             <div class="meta-grid">
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['planDate'] }}</div><div class="meta-value mono">{{ order.plannedDate | localDate:'dd/MM/yyyy' }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['planDate'] }}</div><div class="meta-value mono">{{ order.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}</div></div>
               <div class="meta-item"><div class="meta-label">{{ i18n.t['timeLabel'] }}</div><div class="meta-value mono">{{ order.plannedStartTime }} - {{ order.plannedEndTime }}</div></div>
             </div>
             <div class="field-list" *ngIf="order.description">
@@ -67,7 +67,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="actual-item" *ngFor="let log of order.actualLog; let i = index">
               <div class="actual-item-head">
                 <span class="actual-item-badge">#{{ i + 1 }}</span>
-                <span class="mono">{{ log.actualDate | localDate:'dd/MM/yyyy' }} · {{ log.actualStartTime }} - {{ log.actualEndTime }}</span>
+                <span class="mono">{{ log.actualDate | localDate:'dd/MM/yyyy':'UTC' }} · {{ log.actualStartTime }} - {{ log.actualEndTime }}</span>
               </div>
               <div class="field-list">
                 <div class="field-row" *ngIf="log.actualLocation"><span class="field-label">{{ i18n.t['actualLocation'] }}</span><span class="field-value">{{ log.actualLocation }}</span></div>
@@ -100,7 +100,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="section" *ngIf="order.rescheduleHistory && order.rescheduleHistory.length > 0">
             <div class="section-title">↻ {{ i18n.t['rescheduleHistory'] }}</div>
             <div class="history-item" *ngFor="let h of order.rescheduleHistory">
-              <div class="history-date mono">{{ h.fromDate | localDate:'dd/MM/yyyy' }} → {{ h.toDate | localDate:'dd/MM/yyyy' }}</div>
+              <div class="history-date mono">{{ h.fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ h.toDate | localDate:'dd/MM/yyyy':'UTC' }}</div>
               <div class="history-reason">{{ i18n.t['reasonWord'] }}: {{ h.reason }}</div>
               <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedByName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
             </div>
@@ -183,7 +183,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="summary-box">
             <div class="mono kicker">{{ order.srNumber }}</div>
             <div class="review-title">{{ order.customerName }}</div>
-            <div class="summary-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.plannedDate | localDate:'dd/MM/yyyy' }} · {{ order.plannedStartTime }}-{{ order.plannedEndTime }}</div>
+            <div class="summary-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.plannedDate | localDate:'dd/MM/yyyy':'UTC' }} · {{ order.plannedStartTime }}-{{ order.plannedEndTime }}</div>
           </div>
           <label class="field">
             <span>{{ i18n.t['approvalNoteLabel'] }} {{ i18n.t['optional'] }}</span>
@@ -652,8 +652,8 @@ export class WorkOrderDetailComponent implements OnInit {
 
   openActualForm() {
     if (this.order) {
-      // Prefill from the previous actual entry if there is one, otherwise fall back
-      // to the planned values so the technician only has to adjust, not retype.
+      // ดึงค่าจากรายการ actual ก่อนหน้ามาใส่ก่อน ถ้าไม่มีก็ใช้ค่าที่วางแผนไว้แทน
+      // ให้ช่างแค่ปรับแก้ ไม่ต้องพิมพ์ใหม่ทั้งหมด
       this.actualForm.patchValue({
         actualDate: this.toDateInput(this.order.actualDate) || this.toDateInput(this.order.plannedDate),
         actualStartTime: this.order.actualStartTime || this.order.plannedStartTime || '',
