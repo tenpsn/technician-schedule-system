@@ -3,6 +3,7 @@ const WorkOrder = require('../models/WorkOrder');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { formatThaiDate } = require('../utils/dateFormat');
+const { isRepairType, isInstallationType } = require('../config/workTypes');
 const logger = require('../config/logger');
 
 const generateSRNumber = async () => {
@@ -187,8 +188,8 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
     throw badRequest('Actual description is required', 'actual_description_required');
   }
 
-  const isRepair = order.workType === 'ซ่อม';
-  const isInstallation = order.workType === 'ติดตั้ง';
+  const isRepair = isRepairType(order.workType);
+  const isInstallation = isInstallationType(order.workType);
 
   if (isRepair) {
     if (typeof repairCompleted !== 'boolean') {

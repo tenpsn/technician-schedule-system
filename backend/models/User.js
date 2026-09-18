@@ -1,5 +1,7 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const REGION_BY_PROVINCE = require('../data/provinceRegions');
+const { isSupervisorRole } = require('../config/roles');
 
 const User = sequelize.define('User', {
   id: {
@@ -31,6 +33,8 @@ const User = sequelize.define('User', {
     validate: { isEmail: true }
   },
   phone: DataTypes.STRING,
+  province: DataTypes.STRING,
+  region: DataTypes.STRING,
   active: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
@@ -49,6 +53,11 @@ const User = sequelize.define('User', {
       if (user.fullName) user.fullName = user.fullName.trim();
       if (user.email) user.email = user.email.trim().toLowerCase();
       if (user.phone) user.phone = user.phone.trim();
+    },
+    // คำนวณเขตจากจังหวัดทุกครั้งที่บันทึก ต้องทำในฮุคนี้ตัวเดียว
+    // ฮุคก่อนหน้าเปลี่ยนค่าแล้ว Sequelize จะไม่เอาไปอัปเดตจริง
+    beforeSave: (user) => {
+      user.region = user.province ? (REGION_BY_PROVINCE[user.province] || null) : null;
     }
   }
 });
@@ -57,6 +66,7 @@ const User = sequelize.define('User', {
 User.prototype.toJSON = function () {
   const values = { ...this.get() };
   values._id = values.id;
+  values.isSupervisor = isSupervisorRole(values.role);
   delete values.id;
   delete values.password;
   return values;

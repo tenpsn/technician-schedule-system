@@ -1,8 +1,16 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { shareReplay } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
+
+export interface WorkTypeMeta {
+  types: string[];
+  repairType: string;
+  installationType: string;
+  otherType: string;
+}
 
 export interface ActualLogEntry {
   actualDate: string;
@@ -66,8 +74,19 @@ export class WorkOrderService {
   // environment.apiUrl ลงท้ายด้วย /api แต่รูปที่อัปโหลดเสิร์ฟจาก /uploads
   // ที่ origin เดียวกัน เลยต้องตัด /api ออกตรงนี้
   private photoBase = environment.apiUrl.replace(/\/api\/?$/, '');
+  private workTypes$: Observable<WorkTypeMeta> | null = null;
 
   constructor(private http: HttpClient, private auth: AuthService) {}
+
+  // ประเภทงานกับ ซ่อม/ติดตั้ง มาจาก backend ที่เดียว แคชไว้เพราะไม่เปลี่ยนระหว่างเปิดหน้า
+  getWorkTypes(): Observable<WorkTypeMeta> {
+    if (!this.workTypes$) {
+      this.workTypes$ = this.http.get<WorkTypeMeta>(`${environment.apiUrl}/work-orders/work-types`, {
+        headers: this.getHeaders()
+      }).pipe(shareReplay(1));
+    }
+    return this.workTypes$;
+  }
 
   resolvePhotoUrl(p: string): string {
     return this.photoBase + p;

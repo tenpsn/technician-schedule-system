@@ -466,6 +466,8 @@ export class WorkOrderDetailComponent implements OnInit {
   actualForm: FormGroup;
   rescheduleForm: FormGroup;
   cancelForm: FormGroup;
+  private repairType = '';
+  private installationType = '';
 
   constructor(
     private route: ActivatedRoute,
@@ -503,6 +505,11 @@ export class WorkOrderDetailComponent implements OnInit {
     if (id) {
       this.loadOrder(id);
     }
+    this.workOrderService.getWorkTypes().subscribe(meta => {
+      this.repairType = meta.repairType;
+      this.installationType = meta.installationType;
+      this.cdr.detectChanges();
+    });
   }
 
   get reasonChips() {
@@ -577,11 +584,11 @@ export class WorkOrderDetailComponent implements OnInit {
   }
 
   get isRepairType(): boolean {
-    return this.order?.workType === 'ซ่อม';
+    return !!this.order && this.order.workType === this.repairType;
   }
 
   get isInstallationType(): boolean {
-    return this.order?.workType === 'ติดตั้ง';
+    return !!this.order && this.order.workType === this.installationType;
   }
 
   get canUpdateActual(): boolean {

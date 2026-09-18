@@ -8,6 +8,7 @@ export interface ProfileUpdatePayload {
   fullName?: string;
   email?: string;
   phone?: string;
+  province?: string;
   password?: string;
   currentPassword?: string;
 }
@@ -19,8 +20,11 @@ export interface User {
   role: 'technician' | 'supervisor' | 'admin';
   email?: string;
   phone?: string;
+  province?: string;
+  region?: string;
   active?: boolean;
   token?: string;
+  isSupervisor?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -31,8 +35,25 @@ export class AuthService {
   constructor(private http: HttpClient) {
     const saved = localStorage.getItem('currentUser');
     if (saved) {
-      this.currentUserSubject.next(JSON.parse(saved));
+      const user = JSON.parse(saved);
+      this.currentUserSubject.next(user);
+      // เซสชันเก่าไม่มี isSupervisor ต้องขอข้อมูลสดมาเติม เลื่อนออกนอกคอนสตรักเตอร์
+      // กัน AuthInterceptor ที่ inject AuthService ชนกับตัวเองระหว่างยังสร้างไม่เสร็จ
+      if (user.isSupervisor === undefined) {
+        Promise.resolve().then(() => this.refreshSupervisorFlag(user));
+      }
     }
+  }
+
+  private refreshSupervisorFlag(user: User): void {
+    this.getMe().subscribe({
+      next: (fresh) => {
+        const merged: User = { ...user, role: fresh.role, isSupervisor: fresh.isSupervisor };
+        localStorage.setItem('currentUser', JSON.stringify(merged));
+        this.currentUserSubject.next(merged);
+      },
+      error: () => {}
+    });
   }
 
   login(username: string, password: string): Observable<User> {
@@ -61,7 +82,7 @@ export class AuthService {
       tap(updated => {
         const current = this.currentUserSubject.value;
         if (!current) return;
-        const merged: User = { ...current, fullName: updated.fullName, email: updated.email, phone: updated.phone };
+        const merged: User = { ...current, fullName: updated.fullName, email: updated.email, phone: updated.phone, province: updated.province, region: updated.region, isSupervisor: updated.isSupervisor };
         localStorage.setItem('currentUser', JSON.stringify(merged));
         this.currentUserSubject.next(merged);
       })
@@ -107,7 +128,7 @@ export class AuthService {
   }
 
   get isSupervisor(): boolean {
-    return this.currentUser?.role === 'supervisor' || this.currentUser?.role === 'admin';
+    return this.currentUser?.isSupervisor ?? false;
   }
 
   get isAdmin(): boolean {

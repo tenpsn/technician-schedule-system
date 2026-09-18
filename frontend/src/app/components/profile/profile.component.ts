@@ -3,7 +3,10 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
 import { AuthService } from '../../services/auth.service';
 import { I18nService } from '../../services/i18n.service';
+import { ProvinceService } from '../../services/province.service';
 import { Router } from '@angular/router';
+import { SelectOption } from '../select/select.component';
+import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
 
 @Component({
   selector: 'app-profile',
@@ -39,6 +42,16 @@ import { Router } from '@angular/router';
                 <label class="field">
                   <span>{{ i18n.t['phone'] }} {{ i18n.t['optional'] }}</span>
                   <input formControlName="phone" type="text" placeholder="081-234-5678" maxlength="12" (input)="onPhoneInput($event)">
+                </label>
+              </div>
+              <div class="row row-spaced">
+                <label class="field">
+                  <span>{{ i18n.t['province'] }} *</span>
+                  <app-select formControlName="province" [options]="provinceOptions" [placeholder]="i18n.t['selectProvince']"></app-select>
+                </label>
+                <label class="field">
+                  <span>{{ i18n.t['region'] }}</span>
+                  <input type="text" [value]="regionDisplay" disabled>
                 </label>
               </div>
             </div>
@@ -87,10 +100,12 @@ import { Router } from '@angular/router';
     .section { border-radius: var(--radius); background: var(--alt); border: 1px solid var(--line2); padding: 16px 18px; }
     .section-title { font-size: 13px; font-weight: 700; padding-left: 10px; border-left: 3px solid var(--accent); margin-bottom: 14px; }
     .row { display: flex; flex-wrap: wrap; gap: 14px; }
+    .row-spaced { margin-top: 16px; }
     .field { flex: 1 1 200px; display: flex; flex-direction: column; gap: 6px; }
     .field span { font-size: 12px; color: var(--sub); }
     .field input { border-radius: var(--radius); height: 46px; padding: 0 12px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 14px; outline: none; }
     .field input:focus { border-color: var(--accent); }
+    .field input:disabled { opacity: 0.7; cursor: not-allowed; }
     .error { color: var(--danger-text); font-size: 12px; margin-top: 10px; }
 
     .actions { display: flex; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--line2); background: var(--alt); }
@@ -107,11 +122,13 @@ import { Router } from '@angular/router';
 export class ProfileComponent implements OnInit {
   form: FormGroup;
   saving = false;
+  regionMap: Record<string, string> = {};
 
   constructor(
     private fb: FormBuilder,
     public auth: AuthService,
     public i18n: I18nService,
+    private provinceService: ProvinceService,
     private toastr: ToastrService,
     private router: Router,
     private cdr: ChangeDetectorRef
@@ -120,6 +137,7 @@ export class ProfileComponent implements OnInit {
       fullName: ['', Validators.required],
       email: [''],
       phone: [''],
+      province: ['', Validators.required],
       currentPassword: [''],
       newPassword: ['', Validators.minLength(6)]
     }, { validators: this.passwordPairValidator });
@@ -129,16 +147,32 @@ export class ProfileComponent implements OnInit {
     this.form.patchValue({
       fullName: this.auth.currentUser?.fullName || '',
       email: this.auth.currentUser?.email || '',
-      phone: this.formatPhone(this.auth.currentUser?.phone || '')
+      phone: this.formatPhone(this.auth.currentUser?.phone || ''),
+      province: this.auth.currentUser?.province || ''
     });
 
     this.auth.getMe().subscribe({
       next: (user) => {
-        this.form.patchValue({ email: user.email || '', phone: this.formatPhone(user.phone || '') });
+        this.form.patchValue({ email: user.email || '', phone: this.formatPhone(user.phone || ''), province: user.province || '' });
         this.cdr.detectChanges();
       },
       error: () => {}
     });
+
+    this.provinceService.getRegionMap().subscribe(map => {
+      this.regionMap = map;
+      this.cdr.detectChanges();
+    });
+  }
+
+  get provinceOptions(): SelectOption[] {
+    return getProvinceOptions(this.i18n.lang);
+  }
+
+  get regionDisplay(): string {
+    const province = this.form.get('province')?.value;
+    const region = province ? this.regionMap[province] : '';
+    return getRegionLabel(region, this.i18n.lang) || '–';
   }
 
   onPhoneInput(event: Event) {
@@ -175,8 +209,8 @@ export class ProfileComponent implements OnInit {
       return;
     }
 
-    const { fullName, email, phone, currentPassword, newPassword } = this.form.value;
-    const payload: any = { fullName, email, phone };
+    const { fullName, email, phone, province, currentPassword, newPassword } = this.form.value;
+    const payload: any = { fullName, email, phone, province };
     if (newPassword) {
       payload.password = newPassword;
       payload.currentPassword = currentPassword;

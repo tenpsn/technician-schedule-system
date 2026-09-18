@@ -3,10 +3,12 @@ const { Op } = require('sequelize');
 const WorkOrder = require('../models/WorkOrder');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
+const { isSupervisorRole } = require('../config/roles');
 const { uploadPhotos, saveCompressedPhoto, deletePhotoFile } = require('../middleware/upload');
 const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto } = require('../services/workOrderService');
 const { sendServerError } = require('../utils/httpErrors');
 const { computeOverdue } = require('../utils/overdueCalc');
+const { WORK_TYPES, REPAIR_TYPE, INSTALLATION_TYPE, OTHER_TYPE } = require('../config/workTypes');
 const { monthRangeUTC } = require('../utils/dateRange');
 const logger = require('../config/logger');
 
@@ -111,6 +113,11 @@ router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) =
   }
 });
 
+// ประเภทงานที่เลือกได้ กับค่าที่นับเป็นซ่อม/ติดตั้ง ให้ frontend ใช้แทนการก็อปเอง
+router.get('/work-types', protect, (req, res) => {
+  res.json({ types: WORK_TYPES, repairType: REPAIR_TYPE, installationType: INSTALLATION_TYPE, otherType: OTHER_TYPE });
+});
+
 // ดึงใบงานรายการเดียว
 router.get('/:id', protect, async (req, res) => {
   try {
@@ -124,7 +131,7 @@ router.get('/:id', protect, async (req, res) => {
 
     // ตรวจสอบสิทธิ์
     const isOwner = order.technicianId === req.user.id;
-    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+    const isSupervisor = isSupervisorRole(req.user.role);
 
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized_view_order', message: 'Not authorized to view this order' });
@@ -177,7 +184,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
 
     // ตรวจสอบว่าเป็นเจ้าของงานหรือไม่
     const isOwner = order.technicianId === req.user.id;
-    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+    const isSupervisor = isSupervisorRole(req.user.role);
 
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
@@ -210,7 +217,7 @@ router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
 
     // ตรวจสอบว่าเป็นเจ้าของงานหรือไม่
     const isOwner = order.technicianId === req.user.id;
-    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+    const isSupervisor = isSupervisorRole(req.user.role);
 
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
@@ -258,7 +265,7 @@ router.delete('/:id/photos', protect, async (req, res) => {
     }
 
     const isOwner = order.technicianId === req.user.id;
-    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+    const isSupervisor = isSupervisorRole(req.user.role);
 
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
@@ -295,7 +302,7 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
     // ตรวจสอบว่าเป็นเจ้าของงาน ให้ตรงกับ cancel approve actual photos ที่อนุญาตหัวหน้างานด้วย
     // ไม่ใช่แค่ admin เหมือนที่เคยเป็นมาก่อน
     const isOwner = order.technicianId === req.user.id;
-    const isSupervisor = ['supervisor', 'admin'].includes(req.user.role);
+    const isSupervisor = isSupervisorRole(req.user.role);
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized_reschedule', message: 'Not authorized to reschedule' });
     }
@@ -329,7 +336,7 @@ router.patch('/:id/cancel', protect, async (req, res) => {
 
     // ตรวจสอบสิทธิ์ ต้องเป็นเจ้าของงานหรือหัวหน้างานหรือ admin
     const isOwner = order.technicianId === req.user.id;
-    const isSupervisor = req.user.role === 'supervisor' || req.user.role === 'admin';
+    const isSupervisor = isSupervisorRole(req.user.role);
 
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized_cancel', message: 'Not authorized to cancel this job' });

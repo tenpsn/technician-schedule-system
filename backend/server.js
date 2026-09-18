@@ -16,6 +16,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const hospitalRoutes = require('./routes/hospitalRoutes');
 const contractRoutes = require('./routes/contractRoutes');
 const lineRoutes = require('./routes/lineRoutes');
+const provinceRoutes = require('./routes/provinceRoutes');
 
 // งาน cron
 require('./cron/overdueCheck');
@@ -59,6 +60,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/hospitals', hospitalRoutes);
 app.use('/api/contracts', contractRoutes);
 app.use('/api/line', lineRoutes);
+app.use('/api/provinces', provinceRoutes);
 
 // ตรวจสอบสถานะเซิร์ฟเวอร์
 app.get('/api/health', (req, res) => {

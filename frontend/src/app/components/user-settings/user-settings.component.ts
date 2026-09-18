@@ -4,7 +4,9 @@ import { ToastrService } from 'ngx-toastr';
 import { UserService } from '../../services/user.service';
 import { AuthService, User } from '../../services/auth.service';
 import { I18nService } from '../../services/i18n.service';
+import { ProvinceService } from '../../services/province.service';
 import { SelectOption } from '../select/select.component';
+import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../constants/provinces';
 
 @Component({
   selector: 'app-user-settings',
@@ -34,6 +36,10 @@ import { SelectOption } from '../select/select.component';
             <span>{{ i18n.t['role'] }} *</span>
             <app-select formControlName="role" [options]="roleOptions"></app-select>
           </label>
+          <label class="field field-narrow">
+            <span>{{ i18n.t['province'] }} *</span>
+            <app-select formControlName="province" [options]="provinceOptions" [placeholder]="i18n.t['selectProvince']"></app-select>
+          </label>
           <button type="submit" [disabled]="form.invalid || saving" class="btn-primary">
             + {{ saving ? i18n.t['saving'] : i18n.t['addUser'] }}
           </button>
@@ -56,6 +62,8 @@ import { SelectOption } from '../select/select.component';
                 <th>{{ i18n.t['colFullName'] }}</th>
                 <th>{{ i18n.t['colUsername'] }}</th>
                 <th>{{ i18n.t['colRole'] }}</th>
+                <th>{{ i18n.t['colProvince'] }}</th>
+                <th>{{ i18n.t['region'] }}</th>
                 <th>{{ i18n.t['colStatus'] }}</th>
                 <th></th>
               </tr>
@@ -65,24 +73,41 @@ import { SelectOption } from '../select/select.component';
                 <td>{{ u.fullName }}</td>
                 <td class="muted mono">{{ u.username }}</td>
                 <td>
-                  <app-select [ngModel]="u.role" (ngModelChange)="changeRole(u, $event)" [disabled]="isSelf(u)" [options]="roleOptions" [compact]="true"></app-select>
+                  <app-select *ngIf="editingId === u._id; else roleView" [ngModel]="draft.role" (ngModelChange)="draft.role = $event" [disabled]="isSelf(u)" [options]="roleOptions" [compact]="true"></app-select>
+                  <ng-template #roleView>{{ i18n.roleLabel(u.role) }}</ng-template>
                 </td>
+                <td>
+                  <app-select *ngIf="editingId === u._id; else provinceView" [ngModel]="draft.province" (ngModelChange)="draft.province = $event" [options]="provinceOptions" [placeholder]="i18n.t['selectProvince']" [compact]="true"></app-select>
+                  <ng-template #provinceView><span class="muted">{{ provinceLabelOf(u) || '–' }}</span></ng-template>
+                </td>
+                <td class="muted">{{ regionOf(u) || '–' }}</td>
                 <td>
                   <span class="badge" [class.badge-off]="u.active === false">
                     {{ u.active === false ? i18n.t['inactive'] : i18n.t['active'] }}
                   </span>
                 </td>
                 <td class="actions-cell">
-                  <button *ngIf="u.active !== false" (click)="confirmToggle(u, false)" [disabled]="isSelf(u)" class="btn-delete">
-                    {{ i18n.t['deactivate'] }}
-                  </button>
-                  <button *ngIf="u.active === false" (click)="confirmToggle(u, true)" class="btn-activate">
-                    {{ i18n.t['activate'] }}
-                  </button>
+                 <div class="actions-inner">
+                  <ng-container *ngIf="editingId === u._id; else viewActions">
+                    <button (click)="saveEdit(u)" [disabled]="savingEdit" class="btn-save">
+                      {{ savingEdit ? i18n.t['saving'] : i18n.t['save'] }}
+                    </button>
+                    <button (click)="cancelEdit()" [disabled]="savingEdit" class="btn-cancel">{{ i18n.t['cancel'] }}</button>
+                  </ng-container>
+                  <ng-template #viewActions>
+                    <button (click)="startEdit(u)" class="btn-edit">{{ i18n.t['edit'] }}</button>
+                    <button *ngIf="u.active !== false" (click)="confirmToggle(u, false)" [disabled]="isSelf(u)" class="btn-delete">
+                      {{ i18n.t['deactivate'] }}
+                    </button>
+                    <button *ngIf="u.active === false" (click)="confirmToggle(u, true)" class="btn-activate">
+                      {{ i18n.t['activate'] }}
+                    </button>
+                  </ng-template>
+                 </div>
                 </td>
               </tr>
               <tr *ngIf="filteredUsers.length === 0">
-                <td colspan="5" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="7" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
@@ -104,7 +129,7 @@ import { SelectOption } from '../select/select.component';
     </div>
   `,
   styles: [`
-    .page { padding: 24px 18px 44px; max-width: 1100px; margin: 0 auto; }
+    .page { padding: 24px 18px 44px; max-width: 1500px; margin: 0 auto; }
     .card { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line2); }
     .head-title { font-size: 18px; font-weight: 700; }
@@ -135,7 +160,9 @@ import { SelectOption } from '../select/select.component';
     .data-table td { padding: 10px 20px; border-bottom: 1px solid var(--line2); font-size: 13.5px; }
     .inactive-row { opacity: 0.6; }
     .muted { color: var(--sub); }
-    .actions-cell { text-align: right; padding-right: 20px; }
+    .actions-cell { padding-right: 20px; width: 1%; white-space: nowrap; }
+    .actions-inner { display: flex; justify-content: flex-end; gap: 8px; }
+    .actions-inner button { flex: 0 0 96px; text-align: center; }
     .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
 
     .badge { border-radius: var(--radius); font-size: 11.5px; font-weight: 600; padding: 3px 9px; color: var(--success-text); background: var(--success-bg); border: 1px solid var(--success-line); }
@@ -146,6 +173,15 @@ import { SelectOption } from '../select/select.component';
     .btn-delete:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-activate { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--info-line); background: var(--info-bg); color: var(--info-text); font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn-activate:hover { filter: brightness(1.07); }
+
+    .btn-edit { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-save { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-save:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-cancel { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--line); background: transparent; color: var(--sub); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
 
     .modal-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62); display: flex; align-items: center; justify-content: center; padding: 18px; animation: veilIn .16s ease both; }
     .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease backwards; }
@@ -172,10 +208,16 @@ export class UserSettingsComponent implements OnInit {
   filteredUsers: User[] = [];
   filterText = '';
   toggleTarget: { user: User; next: boolean } | null = null;
+  editingId: string | null = null;
+  savingEdit = false;
+  draft: { role: User['role']; province: string } = { role: 'technician', province: '' };
+  regionMap: Record<string, string> = {};
+  roles: User['role'][] = [];
 
   constructor(
     private fb: FormBuilder,
     private userService: UserService,
+    private provinceService: ProvinceService,
     public auth: AuthService,
     public i18n: I18nService,
     private toastr: ToastrService,
@@ -185,12 +227,21 @@ export class UserSettingsComponent implements OnInit {
       username: ['', [Validators.required, Validators.minLength(3)]],
       password: ['', [Validators.required, Validators.minLength(6)]],
       fullName: ['', Validators.required],
-      role: ['technician', Validators.required]
+      role: ['technician', Validators.required],
+      province: ['', Validators.required]
     });
   }
 
   ngOnInit() {
     this.loadUsers();
+    this.provinceService.getRegionMap().subscribe(map => {
+      this.regionMap = map;
+      this.cdr.detectChanges();
+    });
+    this.userService.getRoles().subscribe(roles => {
+      this.roles = roles;
+      this.cdr.detectChanges();
+    });
   }
 
   loadUsers() {
@@ -223,11 +274,20 @@ export class UserSettingsComponent implements OnInit {
   }
 
   get roleOptions(): SelectOption[] {
-    return [
-      { value: 'technician', label: this.i18n.t['roleTechnician'] },
-      { value: 'supervisor', label: this.i18n.t['roleSupervisor'] },
-      { value: 'admin', label: this.i18n.t['roleAdmin'] }
-    ];
+    return this.roles.map(role => ({ value: role, label: this.i18n.roleLabel(role) }));
+  }
+
+  get provinceOptions(): SelectOption[] {
+    return getProvinceOptions(this.i18n.lang);
+  }
+
+  regionOf(u: User): string {
+    const region = u.province ? this.regionMap[u.province] : '';
+    return getRegionLabel(region, this.i18n.lang);
+  }
+
+  provinceLabelOf(u: User): string {
+    return getProvinceLabel(u.province, this.i18n.lang);
   }
 
   onSubmit() {
@@ -239,7 +299,7 @@ export class UserSettingsComponent implements OnInit {
         this.users = [...this.users, user].sort((a, b) => a.fullName.localeCompare(b.fullName));
         this.applyFilter();
         this.toastr.success(`${this.i18n.t['toastUserAdded']} · ${user.fullName}`);
-        this.form.reset({ role: 'technician' });
+        this.form.reset({ role: 'technician', province: '' });
         this.saving = false;
         this.cdr.detectChanges();
       },
@@ -251,17 +311,30 @@ export class UserSettingsComponent implements OnInit {
     });
   }
 
-  changeRole(u: User, role: string) {
-    const previous = u.role;
-    this.userService.updateUser(u._id, { role: role as User['role'] }).subscribe({
+  startEdit(u: User) {
+    this.editingId = u._id;
+    this.draft = { role: u.role, province: u.province || '' };
+  }
+
+  cancelEdit() {
+    this.editingId = null;
+  }
+
+  saveEdit(u: User) {
+    this.savingEdit = true;
+    this.userService.updateUser(u._id, { role: this.draft.role, province: this.draft.province }).subscribe({
       next: (updated) => {
         u.role = updated.role;
+        u.province = updated.province;
+        u.region = updated.region;
         this.toastr.success(this.i18n.t['toastUserUpdated']);
+        this.savingEdit = false;
+        this.editingId = null;
         this.cdr.detectChanges();
       },
       error: (err) => {
-        u.role = previous;
         this.toastr.error(this.i18n.errorMessage(err));
+        this.savingEdit = false;
         this.cdr.detectChanges();
       }
     });

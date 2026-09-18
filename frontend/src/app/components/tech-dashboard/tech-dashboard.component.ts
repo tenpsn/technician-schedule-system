@@ -409,6 +409,11 @@ export class TechDashboardComponent implements OnInit {
       next: (list) => { this.technicians = list; this.cdr.detectChanges(); },
       error: (err) => console.error('Error loading team members:', err)
     });
+    this.workOrderService.getWorkTypes().subscribe(meta => {
+      this.knownWorkTypes = meta.types.filter(t => t !== meta.otherType);
+      this.otherWorkType = meta.otherType;
+      this.cdr.detectChanges();
+    });
     this.loadData();
   }
 
@@ -599,10 +604,11 @@ export class TechDashboardComponent implements OnInit {
     }));
   }
 
-  private static readonly KNOWN_WORK_TYPES = ['MA', 'ติดตั้ง', 'ซ่อม'];
+  private knownWorkTypes: string[] = [];
+  private otherWorkType = '';
 
   private normalizeWorkType(workType: string): string {
-    return TechDashboardComponent.KNOWN_WORK_TYPES.includes(workType) ? workType : 'อื่นๆ';
+    return this.knownWorkTypes.includes(workType) ? workType : this.otherWorkType;
   }
 
   typeBreakdownOf(techId: string): TypeBreakdown[] {

@@ -19,6 +19,13 @@ function timeRangeValidator(group: AbstractControl): ValidationErrors | null {
   return null;
 }
 
+const WORK_TYPE_LABELS: Record<string, { th: string; en: string }> = {
+  'MA': { th: 'MA (บำรุงรักษา)', en: 'MA (Preventive)' },
+  'ติดตั้ง': { th: 'ติดตั้ง', en: 'Installation' },
+  'ซ่อม': { th: 'ซ่อม', en: 'Repair' },
+  'อื่นๆ': { th: 'อื่นๆ', en: 'Other' }
+};
+
 @Component({
   selector: 'app-work-order-form',
   standalone: false,
@@ -74,7 +81,7 @@ function timeRangeValidator(group: AbstractControl): ValidationErrors | null {
                     {{ i18n.lang === 'th' ? 'กรุณาเลือกประเภทงาน' : 'Required' }}
                   </div>
                 </div>
-                <div class="field" *ngIf="form.get('workType')?.value === 'อื่นๆ'">
+                <div class="field" *ngIf="form.get('workType')?.value === otherWorkType">
                   <label>{{ i18n.lang === 'th' ? 'ระบุประเภทงาน' : 'Specify type' }} *</label>
                   <input formControlName="workTypeOther" type="text">
                   <div class="error" *ngIf="form.get('workTypeOther')?.invalid && form.get('workTypeOther')?.touched">
@@ -179,6 +186,8 @@ export class WorkOrderFormComponent implements OnInit {
   saved = false;
   hospitalSuggestions: Hospital[] = [];
   showSuggestions = false;
+  workTypes: string[] = [];
+  otherWorkType = '';
   private customerNameQuery$ = new Subject<string>();
 
   constructor(
@@ -217,21 +226,26 @@ export class WorkOrderFormComponent implements OnInit {
     });
   }
 
-  ngOnInit() {}
+  ngOnInit() {
+    this.workOrderService.getWorkTypes().subscribe(meta => {
+      this.workTypes = meta.types;
+      this.otherWorkType = meta.otherType;
+      this.cdr.detectChanges();
+    });
+  }
 
   get workTypeOptions(): SelectOption[] {
-    return [
-      { value: '', label: this.i18n.t['selectType'] },
-      { value: 'MA', label: `MA (${this.i18n.lang === 'th' ? 'บำรุงรักษา' : 'Preventive'})` },
-      { value: 'ติดตั้ง', label: this.i18n.lang === 'th' ? 'ติดตั้ง' : 'Installation' },
-      { value: 'ซ่อม', label: this.i18n.lang === 'th' ? 'ซ่อม' : 'Repair' },
-      { value: 'อื่นๆ', label: this.i18n.lang === 'th' ? 'อื่นๆ' : 'Other' }
-    ];
+    const options: SelectOption[] = [{ value: '', label: this.i18n.t['selectType'] }];
+    this.workTypes.forEach(workType => {
+      const label = WORK_TYPE_LABELS[workType];
+      options.push({ value: workType, label: label ? (this.i18n.lang === 'th' ? label.th : label.en) : workType });
+    });
+    return options;
   }
 
   onWorkTypeChange() {
     const otherControl = this.form.get('workTypeOther');
-    if (this.form.get('workType')?.value === 'อื่นๆ') {
+    if (this.form.get('workType')?.value === this.otherWorkType) {
       otherControl?.setValidators(Validators.required);
     } else {
       otherControl?.clearValidators();
@@ -276,7 +290,7 @@ export class WorkOrderFormComponent implements OnInit {
 
     const { workTypeOther, ...formValue } = this.form.value;
     let description = formValue.description;
-    if (formValue.workType === 'อื่นๆ' && workTypeOther) {
+    if (formValue.workType === this.otherWorkType && workTypeOther) {
       // ทำตามรูปแบบเดียวกับ flow อื่นๆ ของ LINE bot คือ workType จะเป็นอื่นๆ เสมอ
       // ส่วนที่ผู้ใช้พิมพ์มาจะถูกเก็บรวมไว้ใน description แทน
       const note = `ประเภทงาน: ${workTypeOther.trim()}`;

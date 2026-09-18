@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
 const loginAttempts = require('../utils/loginAttempts');
 const { sendServerError } = require('../utils/httpErrors');
+const { isSupervisorRole } = require('../config/roles');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -12,10 +13,10 @@ const router = express.Router();
 // สมัครผู้ใช้ สำหรับ admin เท่านั้น
 router.post('/register', protect, authorize('admin'), async (req, res) => {
   try {
-    const { username, password, fullName, role, email, phone } = req.body;
+    const { username, password, fullName, role, email, phone, province } = req.body;
 
     // ตรวจสอบข้อมูล
-    if (!username || !password || !fullName) {
+    if (!username || !password || !fullName || !province) {
       return res.status(400).json({ code: 'missing_required_fields', message: 'Please provide all required fields' });
     }
 
@@ -34,7 +35,8 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
       fullName,
       role: role || 'technician',
       email,
-      phone
+      phone,
+      province
     });
 
     logger.info(`User registered: ${username} (${user.id})`);
@@ -44,7 +46,8 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
       username: user.username,
       fullName: user.fullName,
       role: user.role,
-      email: user.email
+      email: user.email,
+      province: user.province
     });
   } catch (error) {
     logger.error(`Register error: ${error.message}`);
@@ -101,6 +104,7 @@ router.post('/login', async (req, res) => {
         username: user.username,
         fullName: user.fullName,
         role: user.role,
+        isSupervisor: isSupervisorRole(user.role),
         email: user.email,
         token
       });
@@ -128,7 +132,7 @@ router.get('/me', protect, async (req, res) => {
 // แก้ไขโปรไฟล์ตัวเอง ผู้ใช้ที่ล็อกอินแล้วทำได้ทุกคน
 router.patch('/me', protect, async (req, res) => {
   try {
-    const { fullName, email, phone, password, currentPassword } = req.body;
+    const { fullName, email, phone, province, password, currentPassword } = req.body;
     const user = await User.findByPk(req.user.id);
 
     if (password) {
@@ -146,6 +150,7 @@ router.patch('/me', protect, async (req, res) => {
     if (fullName !== undefined) user.fullName = fullName;
     if (email !== undefined) user.email = email;
     if (phone !== undefined) user.phone = phone;
+    if (province !== undefined) user.province = province;
 
     await user.save();
     logger.info(`User updated own profile: ${user.username}`);
@@ -154,6 +159,11 @@ router.patch('/me', protect, async (req, res) => {
     logger.error(`Update profile error: ${error.message}`);
     sendServerError(res);
   }
+});
+
+// รายการบทบาทที่ใช้ได้ ดึงตรงจากนิยาม ENUM ของ User กันรายการเพี้ยนจาก frontend
+router.get('/roles', protect, (req, res) => {
+  res.json(User.rawAttributes.role.values);
 });
 
 // ดึงผู้ใช้ทั้งหมด สำหรับ admin หรือหัวหน้างานเท่านั้น
@@ -186,7 +196,7 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
       return res.status(404).json({ code: 'user_not_found', message: 'User not found' });
     }
 
-    const { fullName, role, email, phone, active, password } = req.body;
+    const { fullName, role, email, phone, province, active, password } = req.body;
 
     if (active === false && user.id === req.user.id) {
       return res.status(400).json({ code: 'cannot_deactivate_self', message: 'You cannot deactivate your own account' });
@@ -196,6 +206,7 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
     if (role !== undefined) user.role = role;
     if (email !== undefined) user.email = email;
     if (phone !== undefined) user.phone = phone;
+    if (province !== undefined) user.province = province;
     if (active !== undefined) user.active = active;
     if (password) {
       const salt = await bcrypt.genSalt(10);

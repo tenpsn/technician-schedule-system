@@ -11,6 +11,8 @@ const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = r
 const lineSession = require('../utils/lineSession');
 const loginAttempts = require('../utils/loginAttempts');
 const { formatThaiDate } = require('../utils/dateFormat');
+const { isSupervisorRole } = require('../config/roles');
+const { WORK_TYPES, OTHER_TYPE, isRepairType, isInstallationType } = require('../config/workTypes');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -35,12 +37,10 @@ const LOGIN_SWITCH_TEXT =
 `ต้องการเปลี่ยนบัญชีที่เชื่อมไว้ พิมพ์ "login" แล้วบอทจะถามทีละขั้น
 หรือพิมพ์บรรทัดเดียว: login ชื่อผู้ใช้ รหัสผ่าน`;
 
-const WORK_TYPE_OPTIONS = ['MA', 'ติดตั้ง', 'ซ่อม', 'อื่นๆ'];
-
 const ADD_JOB_PROMPTS = {
   customerName: 'พิมพ์ชื่อลูกค้า/โรงพยาบาล',
   customerLocation: 'ไม่พบชื่อนี้ในฐานข้อมูล รพ. กรุณาพิมพ์สถานที่ปฏิบัติงาน',
-  workType: `ประเภทงาน\n\n${WORK_TYPE_OPTIONS.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}`,
+  workType: `ประเภทงาน\n\n${WORK_TYPES.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}`,
   workTypeOther: 'อื่นๆ โปรดระบุ',
   plannedDate: 'วันที่ปฏิบัติงาน เช่น 15/09/2026',
   plannedTime: 'เวลา (HH:MM-HH:MM) เช่น 09:00-12:00',
@@ -150,7 +150,7 @@ const finishLogin = async (user, lineUserId, replyToken) => {
   user.lineUserId = lineUserId;
   await user.save();
   logger.info(`LINE account linked: ${user.username}`);
-  const roleHelp = ['supervisor', 'admin'].includes(user.role) ? `\n\n${APPROVE_HELP_TEXT}` : '';
+  const roleHelp = isSupervisorRole(user.role) ? `\n\n${APPROVE_HELP_TEXT}` : '';
   return replyText(replyToken,
     `เชื่อมบัญชีสำเร็จ ✅ สวัสดีคุณ ${user.fullName}\n\n${HELP_TEXT}${roleHelp}\n\n${LOGIN_SWITCH_TEXT}`);
 };
@@ -321,23 +321,23 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
   }
 
   if (step === 'workType') {
-    const optionIndex = WORK_TYPE_OPTIONS.findIndex(
+    const optionIndex = WORK_TYPES.findIndex(
       (opt, i) => value === String(i + 1) || value.toLowerCase() === opt.toLowerCase()
     );
     if (optionIndex === -1) {
-      return replyText(replyToken, `เลือกไม่ถูกต้อง กรุณาพิมพ์ตัวเลข 1-${WORK_TYPE_OPTIONS.length}\n\n${ADD_JOB_PROMPTS.workType}`);
+      return replyText(replyToken, `เลือกไม่ถูกต้อง กรุณาพิมพ์ตัวเลข 1-${WORK_TYPES.length}\n\n${ADD_JOB_PROMPTS.workType}`);
     }
-    if (WORK_TYPE_OPTIONS[optionIndex] === 'อื่นๆ') {
+    if (WORK_TYPES[optionIndex] === OTHER_TYPE) {
       lineSession.set(lineUserId, { flow: 'addJob', step: 'workTypeOther', data });
       return replyText(replyToken, ADD_JOB_PROMPTS.workTypeOther);
     }
-    data.workType = WORK_TYPE_OPTIONS[optionIndex];
+    data.workType = WORK_TYPES[optionIndex];
     lineSession.set(lineUserId, { flow: 'addJob', step: 'plannedDate', data });
     return replyText(replyToken, ADD_JOB_PROMPTS.plannedDate);
   }
 
   if (step === 'workTypeOther') {
-    data.workType = 'อื่นๆ';
+    data.workType = OTHER_TYPE;
     const note = `ประเภทงาน: ${value}`;
     data.description = data.description ? `${note}\n${data.description}` : note;
     lineSession.set(lineUserId, { flow: 'addJob', step: 'plannedDate', data });
@@ -398,7 +398,7 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
     const isOwner = order.technicianId === technician.id;
-    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    const isSupervisor = isSupervisorRole(technician.role);
     if (!isOwner && !isSupervisor) {
       lineSession.clear(lineUserId);
       return replyText(replyToken, 'คุณไม่มีสิทธิเลื่อนงานนี้');
@@ -462,7 +462,7 @@ const handleCancelJobStep = async (text, technician, lineUserId, replyToken, ses
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
     const isOwner = order.technicianId === technician.id;
-    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    const isSupervisor = isSupervisorRole(technician.role);
     if (!isOwner && !isSupervisor) {
       lineSession.clear(lineUserId);
       return replyText(replyToken, 'คุณไม่มีสิทธิยกเลิกงานนี้');
@@ -545,7 +545,7 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
     const isOwner = order.technicianId === technician.id;
-    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    const isSupervisor = isSupervisorRole(technician.role);
     if (!isOwner && !isSupervisor) {
       lineSession.clear(lineUserId);
       return replyText(replyToken, 'คุณไม่มีสิทธิบันทึกงานนี้');
@@ -596,11 +596,11 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
 
   if (step === 'actualDescription') {
     data.actualDescription = value;
-    if (data.workType === 'ซ่อม') {
+    if (isRepairType(data.workType)) {
       lineSession.set(lineUserId, { flow: 'actual', step: 'repairCompleted', data });
       return replyText(replyToken, ACTUAL_PROMPTS.repairCompleted);
     }
-    if (data.workType === 'ติดตั้ง') {
+    if (isInstallationType(data.workType)) {
       lineSession.set(lineUserId, { flow: 'actual', step: 'installationDelivered', data });
       return replyText(replyToken, ACTUAL_PROMPTS.installationDelivered);
     }
@@ -637,7 +637,7 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
 };
 
 const handleApprove = async (text, approver, replyToken) => {
-  if (!['supervisor', 'admin'].includes(approver.role)) {
+  if (!isSupervisorRole(approver.role)) {
     return replyText(replyToken, 'คำสั่งนี้ใช้ได้เฉพาะหัวหน้าช่าง/แอดมินเท่านั้น');
   }
 
@@ -698,7 +698,7 @@ const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, ses
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
     const isOwner = order.technicianId === technician.id;
-    const isSupervisor = ['supervisor', 'admin'].includes(technician.role);
+    const isSupervisor = isSupervisorRole(technician.role);
     if (!isOwner && !isSupervisor) {
       lineSession.clear(lineUserId);
       return replyText(replyToken, 'คุณไม่มีสิทธิแนบรูปงานนี้');
@@ -861,7 +861,7 @@ router.post('/webhook', async (req, res) => {
         await handleApprove(text, technician, replyToken);
       } else {
         logger.info(`LINE webhook: message from ${technician.username} did not match add-job format, sending help text`);
-        const roleHelp = ['supervisor', 'admin'].includes(technician.role) ? `\n\n${APPROVE_HELP_TEXT}` : '';
+        const roleHelp = isSupervisorRole(technician.role) ? `\n\n${APPROVE_HELP_TEXT}` : '';
         await replyText(replyToken, `${HELP_TEXT}${roleHelp}\n\n${LOGIN_SWITCH_TEXT}`);
       }
     } catch (error) {
