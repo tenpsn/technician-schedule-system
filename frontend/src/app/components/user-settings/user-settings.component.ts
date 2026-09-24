@@ -69,7 +69,7 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let u of filteredUsers" [class.inactive-row]="u.active === false">
+              <tr *ngFor="let u of pagedUsers" [class.inactive-row]="u.active === false">
                 <td>{{ u.fullName }}</td>
                 <td class="muted mono">{{ u.username }}</td>
                 <td>
@@ -111,6 +111,17 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="pagination-bar" *ngIf="filteredUsers.length > pageSize">
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goFirst()">{{ i18n.t['pageFirst'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goPrev()">{{ i18n.t['pagePrev'] }}</button>
+          <span class="page-jump">
+            <input type="number" min="1" [max]="totalPages" [ngModel]="currentPage" (ngModelChange)="goToPage($event)" class="page-input">
+            <span class="muted">/ {{ totalPages }}</span>
+          </span>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goNext()">{{ i18n.t['next'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goLast()">{{ i18n.t['pageLast'] }}</button>
         </div>
       </div>
 
@@ -164,6 +175,16 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
     .actions-inner { display: flex; justify-content: flex-end; gap: 8px; }
     .actions-inner button { flex: 0 0 96px; text-align: center; }
     .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
+    .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line2); }
+    .btn-page { border-radius: var(--radius); height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-page:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-page:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-jump { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 0 4px; }
+    .page-input { width: 52px; height: 36px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--field); color: var(--ink); text-align: center; font-size: 13px; }
+    .page-input:focus { border-color: var(--accent); outline: none; }
+    .page-input::-webkit-outer-spin-button,
+    .page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .page-input[type=number] { -moz-appearance: textfield; }
 
     .badge { border-radius: var(--radius); font-size: 11.5px; font-weight: 600; padding: 3px 9px; color: var(--success-text); background: var(--success-bg); border: 1px solid var(--success-line); }
     .badge-off { color: var(--sub); background: var(--alt); border: 1px solid var(--line2); }
@@ -207,6 +228,8 @@ export class UserSettingsComponent implements OnInit {
   users: User[] = [];
   filteredUsers: User[] = [];
   filterText = '';
+  pageSize = 10;
+  currentPage = 1;
   toggleTarget: { user: User; next: boolean } | null = null;
   editingId: string | null = null;
   savingEdit = false;
@@ -249,7 +272,7 @@ export class UserSettingsComponent implements OnInit {
     this.userService.getAllUsers().subscribe({
       next: (users) => {
         this.users = users;
-        this.applyFilter();
+        this.applyFilter(false);
         this.loading = false;
         this.cdr.detectChanges();
       },
@@ -262,12 +285,36 @@ export class UserSettingsComponent implements OnInit {
     });
   }
 
-  applyFilter() {
+  applyFilter(resetPage: boolean = true) {
     const q = this.filterText.trim().toLowerCase();
     this.filteredUsers = q
-      ? this.users.filter(u => (u.fullName + u.username).toLowerCase().includes(q))
+      ? this.users.filter(u =>
+          u.fullName.toLowerCase().includes(q) ||
+          u.username.toLowerCase().includes(q) ||
+          this.i18n.roleLabel(u.role).toLowerCase().includes(q)
+        )
       : this.users;
+    this.currentPage = resetPage ? 1 : Math.min(this.currentPage, this.totalPages);
   }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredUsers.length / this.pageSize));
+  }
+
+  get pagedUsers(): User[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredUsers.slice(start, start + this.pageSize);
+  }
+
+  goToPage(page: number) {
+    const target = Math.floor(page) || 1;
+    this.currentPage = Math.min(Math.max(1, target), this.totalPages);
+  }
+
+  goFirst() { this.goToPage(1); }
+  goPrev() { this.goToPage(this.currentPage - 1); }
+  goNext() { this.goToPage(this.currentPage + 1); }
+  goLast() { this.goToPage(this.totalPages); }
 
   isSelf(u: User): boolean {
     return u._id === this.auth.currentUser?._id;
@@ -297,7 +344,7 @@ export class UserSettingsComponent implements OnInit {
     this.userService.createUser(this.form.value).subscribe({
       next: (user) => {
         this.users = [...this.users, user].sort((a, b) => a.fullName.localeCompare(b.fullName));
-        this.applyFilter();
+        this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastUserAdded']} · ${user.fullName}`);
         this.form.reset({ role: 'technician', province: '' });
         this.saving = false;

@@ -24,7 +24,7 @@ import { I18nService } from '../../services/i18n.service';
         <div class="search-bar" *ngIf="!loading">
           <div class="search-box">
             <span>⌕</span>
-            <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']">
+            <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']" (ngModelChange)="applyFilter()">
           </div>
           <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredOrders.length }} / {{ orders.length }}</span>
         </div>
@@ -47,7 +47,7 @@ import { I18nService } from '../../services/i18n.service';
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let order of filteredOrders">
+              <tr *ngFor="let order of pagedOrders">
                 <td class="mono">{{ order.srNumber }}</td>
                 <td>{{ order.customerName }}</td>
                 <td><span class="badge">{{ i18n.typeLabel(order.workType) }}</span></td>
@@ -62,6 +62,17 @@ import { I18nService } from '../../services/i18n.service';
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="pagination-bar" *ngIf="filteredOrders.length > pageSize">
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goFirst()">{{ i18n.t['pageFirst'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goPrev()">{{ i18n.t['pagePrev'] }}</button>
+          <span class="page-jump">
+            <input type="number" min="1" [max]="totalPages" [ngModel]="currentPage" (ngModelChange)="goToPage($event)" class="page-input">
+            <span class="muted">/ {{ totalPages }}</span>
+          </span>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goNext()">{{ i18n.t['next'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goLast()">{{ i18n.t['pageLast'] }}</button>
         </div>
       </div>
     </div>
@@ -96,6 +107,17 @@ import { I18nService } from '../../services/i18n.service';
     .reason-cell { max-width: 260px; color: var(--sub); font-size: 12.5px; }
     .badge { display: inline-block; padding: 2px 8px; background: var(--info-bg); color: var(--info-text); border: 1px solid var(--info-line); border-radius: var(--radius); font-size: 11.5px; font-weight: 600; }
 
+    .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line2); }
+    .btn-page { border-radius: var(--radius); height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-page:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-page:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-jump { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 0 4px; }
+    .page-input { width: 52px; height: 36px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--field); color: var(--ink); text-align: center; font-size: 13px; }
+    .page-input:focus { border-color: var(--accent); outline: none; }
+    .page-input::-webkit-outer-spin-button,
+    .page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .page-input[type=number] { -moz-appearance: textfield; }
+
     @media (max-width: 768px) {
       .reason-cell { max-width: 150px; }
       .filter-bar { flex-direction: column; align-items: stretch; }
@@ -105,10 +127,13 @@ import { I18nService } from '../../services/i18n.service';
 })
 export class CancelledOrdersComponent implements OnInit {
   orders: WorkOrder[] = [];
+  filteredOrders: WorkOrder[] = [];
   loading = false;
   selectedMonth: number = new Date().getMonth() + 1;
   selectedYear: number = new Date().getFullYear();
   searchText = '';
+  pageSize = 10;
+  currentPage = 1;
 
   years = Array.from({ length: 41 }, (_, i) => new Date().getFullYear() - 20 + i);
 
@@ -131,18 +156,39 @@ export class CancelledOrdersComponent implements OnInit {
     private cdr: ChangeDetectorRef
   ) {}
 
-  get filteredOrders(): WorkOrder[] {
+  applyFilter(resetPage: boolean = true) {
     const q = this.searchText.trim().toLowerCase();
-    if (!q) return this.orders;
-    return this.orders.filter(o =>
-      (o.srNumber || '').toLowerCase().includes(q) ||
-      (o.customerName || '').toLowerCase().includes(q) ||
-      (o.technician?.fullName || '').toLowerCase().includes(q) ||
-      (o.cancelledBy?.fullName || '').toLowerCase().includes(q) ||
-      (o.cancelReason || '').toLowerCase().includes(q) ||
-      this.i18n.typeLabel(o.workType).toLowerCase().includes(q)
-    );
+    this.filteredOrders = q
+      ? this.orders.filter(o =>
+          (o.srNumber || '').toLowerCase().includes(q) ||
+          this.i18n.typeLabel(o.workType).toLowerCase().includes(q) ||
+          (o.customerName || '').toLowerCase().includes(q) ||
+          (o.technician?.fullName || '').toLowerCase().includes(q) ||
+          (o.cancelledBy?.fullName || '').toLowerCase().includes(q) ||
+          (o.cancelReason || '').toLowerCase().includes(q)
+        )
+      : this.orders;
+    this.currentPage = resetPage ? 1 : Math.min(this.currentPage, this.totalPages);
   }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredOrders.length / this.pageSize));
+  }
+
+  get pagedOrders(): WorkOrder[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredOrders.slice(start, start + this.pageSize);
+  }
+
+  goToPage(page: number) {
+    const target = Math.floor(page) || 1;
+    this.currentPage = Math.min(Math.max(1, target), this.totalPages);
+  }
+
+  goFirst() { this.goToPage(1); }
+  goPrev() { this.goToPage(this.currentPage - 1); }
+  goNext() { this.goToPage(this.currentPage + 1); }
+  goLast() { this.goToPage(this.totalPages); }
 
   ngOnInit() {
     this.loadData();
@@ -154,6 +200,7 @@ export class CancelledOrdersComponent implements OnInit {
       .subscribe({
         next: (orders) => {
           this.orders = orders;
+          this.applyFilter();
           this.loading = false;
           this.cdr.detectChanges();
         },

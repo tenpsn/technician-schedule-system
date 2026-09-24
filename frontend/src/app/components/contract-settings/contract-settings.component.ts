@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
-import { ContractService, Contract, MaVisit } from '../../services/contract.service';
+import { ContractService, Contract, MaVisit, MaCycle } from '../../services/contract.service';
 import { HospitalService, Hospital } from '../../services/hospital.service';
 import { UserService } from '../../services/user.service';
 import { I18nService } from '../../services/i18n.service';
@@ -73,6 +73,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
           <table class="data-table">
             <thead>
               <tr>
+                <th class="col-alert">{{ i18n.t['maCurrentCycle'] }}</th>
                 <th>{{ i18n.t['hospitalName'] }}</th>
                 <th>{{ i18n.t['contractNumber'] }}</th>
                 <th>{{ i18n.t['contractStart'] }}</th>
@@ -83,7 +84,11 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let c of filteredContracts">
+              <tr *ngFor="let c of pagedContracts" [class.row-urgent]="isMaUrgent(c)">
+                <td class="ma-cell">
+                  <span *ngIf="c.maCycle as mc; else maCycleNone" [class.urgent]="isMaUrgent(c)">{{ maCycleWarning(mc) }}</span>
+                  <ng-template #maCycleNone><span class="muted">–</span></ng-template>
+                </td>
                 <td>{{ c.hospital?.name }}</td>
                 <td class="muted">{{ c.contractNumber }}</td>
                 <td class="muted">{{ c.startDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
@@ -96,10 +101,21 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 </td>
               </tr>
               <tr *ngIf="filteredContracts.length === 0">
-                <td colspan="7" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="8" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="pagination-bar" *ngIf="filteredContracts.length > pageSize">
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goFirst()">{{ i18n.t['pageFirst'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goPrev()">{{ i18n.t['pagePrev'] }}</button>
+          <span class="page-jump">
+            <input type="number" min="1" [max]="totalPages" [ngModel]="currentPage" (ngModelChange)="goToPage($event)" class="page-input">
+            <span class="muted">/ {{ totalPages }}</span>
+          </span>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goNext()">{{ i18n.t['next'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goLast()">{{ i18n.t['pageLast'] }}</button>
         </div>
       </div>
 
@@ -209,7 +225,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
     </div>
   `,
   styles: [`
-    .page { padding: 24px 18px 44px; max-width: 1320px; margin: 0 auto; }
+    .page { padding: 24px 18px 44px; max-width: 1500px; margin: 0 auto; }
     .card { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line2); }
     .head-title { font-size: 18px; font-weight: 700; }
@@ -251,12 +267,26 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
     .col-ma { width: 170px; }
     .col-status { width: 140px; }
     .col-actions { width: 170px; }
+    .col-alert { width: 220px; }
+    .ma-cell span.urgent { color: var(--danger-text); font-weight: 600; }
+    .row-urgent { background: var(--danger-bg); }
+    .row-urgent:hover { background: var(--danger-bg); }
     .status-badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
     .status-active { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-line); }
     .status-expiring { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-line); }
     .status-expired { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-line); }
     .actions-cell { text-align: right; padding-right: 20px; white-space: nowrap; }
     .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
+    .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line2); }
+    .btn-page { border-radius: var(--radius); height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-page:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-page:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-jump { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 0 4px; }
+    .page-input { width: 52px; height: 36px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--field); color: var(--ink); text-align: center; font-size: 13px; }
+    .page-input:focus { border-color: var(--accent); outline: none; }
+    .page-input::-webkit-outer-spin-button,
+    .page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .page-input[type=number] { -moz-appearance: textfield; }
     .btn-edit { border-radius: var(--radius); height: 34px; padding: 0 12px; margin-right: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -272,7 +302,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
 
     .v-grid {
       display: grid;
-      grid-template-columns: 14px 26px 190px minmax(140px, 1fr) 108px 116px;
+      grid-template-columns: 14px 46px 190px minmax(140px, 1fr) 108px 116px;
       align-items: center;
       gap: 8px;
     }
@@ -323,6 +353,8 @@ export class ContractSettingsComponent implements OnInit {
   contracts: Contract[] = [];
   filteredContracts: Contract[] = [];
   filterText = '';
+  pageSize = 10;
+  currentPage = 1;
   hospitalOptions: SelectOption[] = [];
   editTarget: Contract | null = null;
   visitsTarget: Contract | null = null;
@@ -381,12 +413,53 @@ export class ContractSettingsComponent implements OnInit {
     return this.i18n.lang === 'th' ? `ทุก ${months} เดือน` : `Every ${months} months`;
   }
 
-  applyFilter() {
-    const q = this.filterText.trim();
-    this.filteredContracts = q
-      ? this.contracts.filter(c => (c.hospital?.name || '').includes(q) || c.contractNumber.includes(q))
-      : this.contracts;
+  isMaUrgent(c: Contract): boolean {
+    return !!c.maCycle && !c.maCycle.assigned && c.maCycle.daysLeft <= 10;
   }
+
+  maCycleWarning(mc: MaCycle): string {
+    if (mc.assigned) {
+      return this.i18n.lang === 'th' ? `MA รอบที่ ${mc.sequenceNo} มอบหมายแล้ว` : `MA round ${mc.sequenceNo} assigned`;
+    }
+    if (mc.daysLeft <= 10) {
+      return this.i18n.lang === 'th'
+        ? `MA รอบที่ ${mc.sequenceNo} เหลือเวลาอีก ${mc.daysLeft} วัน กรุณามอบหมายงาน`
+        : `MA round ${mc.sequenceNo} — ${mc.daysLeft} day(s) left, please assign`;
+    }
+    return this.i18n.lang === 'th'
+      ? `MA รอบที่ ${mc.sequenceNo} ยังไม่ได้มอบหมาย`
+      : `MA round ${mc.sequenceNo} not yet assigned`;
+  }
+
+  applyFilter(resetPage: boolean = true) {
+    const q = this.filterText.trim().toLowerCase();
+    this.filteredContracts = q
+      ? this.contracts.filter(c =>
+          (c.hospital?.name || '').toLowerCase().includes(q) ||
+          c.contractNumber.toLowerCase().includes(q)
+        )
+      : this.contracts;
+    this.currentPage = resetPage ? 1 : Math.min(this.currentPage, this.totalPages);
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredContracts.length / this.pageSize));
+  }
+
+  get pagedContracts(): Contract[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredContracts.slice(start, start + this.pageSize);
+  }
+
+  goToPage(page: number) {
+    const target = Math.floor(page) || 1;
+    this.currentPage = Math.min(Math.max(1, target), this.totalPages);
+  }
+
+  goFirst() { this.goToPage(1); }
+  goPrev() { this.goToPage(this.currentPage - 1); }
+  goNext() { this.goToPage(this.currentPage + 1); }
+  goLast() { this.goToPage(this.totalPages); }
 
   contractStatus(c: Contract): 'active' | 'expiring' | 'expired' {
     // endDate parse เป็น UTC midnight สร้างวันนี้แบบเดียวกัน กันนับวันเพี้ยนข้าม timezone
@@ -420,7 +493,7 @@ export class ContractSettingsComponent implements OnInit {
     this.contractService.getAll().subscribe({
       next: (contracts) => {
         this.contracts = contracts;
-        this.applyFilter();
+        this.applyFilter(false);
         this.loading = false;
         this.cdr.detectChanges();
       },
@@ -442,7 +515,7 @@ export class ContractSettingsComponent implements OnInit {
     this.contractService.create(hospitalId, contractNumber, startDate, endDate, maIntervalMonths).subscribe({
       next: (contract) => {
         this.contracts = [contract, ...this.contracts];
-        this.applyFilter();
+        this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastContract']} · ${contract.contractNumber}`);
         this.form.reset();
         this.saving = false;
@@ -476,7 +549,7 @@ export class ContractSettingsComponent implements OnInit {
     this.contractService.update(target._id, hospitalId, contractNumber, startDate, endDate, maIntervalMonths).subscribe({
       next: (updated) => {
         this.contracts = this.contracts.map(c => c._id === updated._id ? updated : c);
-        this.applyFilter();
+        this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastContractUpdated']} · ${updated.contractNumber}`);
         this.editSaving = false;
         this.editTarget = null;

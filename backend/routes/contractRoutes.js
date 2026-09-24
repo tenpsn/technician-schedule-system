@@ -1,4 +1,5 @@
 const express = require('express');
+const { Op } = require('sequelize');
 const Contract = require('../models/Contract');
 const Hospital = require('../models/Hospital');
 const MaVisit = require('../models/MaVisit');
@@ -58,6 +59,49 @@ function generateVisitDates(startDate, endDate, intervalMonths) {
   return dates;
 }
 
+function addDays(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function diffDays(fromStr, toStr) {
+  const [y1, m1, d1] = fromStr.split('-').map(Number);
+  const [y2, m2, d2] = toStr.split('-').map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+}
+
+function todayDateOnly() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())).toISOString().slice(0, 10);
+}
+
+// หารอบ MA ที่วันนี้ตกอยู่ในนั้น แล้วเช็คว่ารอบนี้มอบหมายช่างแล้วหรือยัง
+// อ่านจาก contract.startDate/endDate/maIntervalMonths ตรงๆ ไม่พึ่งแถวใน ma_visits เพราะสัญญาที่ยังไม่เคยเปิดดูรอบ MA จะยังไม่มีแถวให้อ่าน
+// คืนค่า null ถ้าไม่มีรอบที่วันนี้ตกอยู่ (สัญญายังไม่เริ่มหรือหมดอายุแล้ว)
+async function getCurrentMaCycle(contract, today) {
+  const periodStarts = generateVisitDates(contract.startDate, contract.endDate, contract.maIntervalMonths);
+  let period = null;
+  let sequenceNo = null;
+  for (let i = 0; i < periodStarts.length; i++) {
+    const periodStart = periodStarts[i];
+    const periodEnd = i + 1 < periodStarts.length ? addDays(periodStarts[i + 1], -1) : contract.endDate;
+    if (periodStart <= today && today <= periodEnd) {
+      period = { periodStart, periodEnd };
+      sequenceNo = i + 1;
+      break;
+    }
+  }
+  if (!period) return null;
+
+  const visit = await MaVisit.findOne({
+    where: { contractId: contract.id, scheduledDate: { [Op.between]: [period.periodStart, period.periodEnd] } }
+  });
+  if (visit) sequenceNo = visit.sequenceNo;
+  const assigned = !!(visit && visit.workOrderId);
+
+  return { sequenceNo, daysLeft: diffDays(today, period.periodEnd), assigned };
+}
+
 // สร้างตารางเข้า MA ใหม่ให้สัญญา visit ที่มอบหมายช่างแล้วคือ workOrderId มีค่า ถือเป็นงานจริงแล้วจะไม่ถูกลบทิ้ง มีแค่ placeholder ที่ยังไม่มอบหมายเท่านั้นที่ถูกแทนที่
 // sequenceNo จะเรียงเลขใหม่ทั้งชุดตามลำดับวันที่ ไม่ใช่ต่อท้ายชุดเดิม กันเลขซ้ำกันเมื่อ visit ที่มอบหมายแล้วไม่ได้อยู่ลำดับแรกสุด
 async function regenerateVisits(contractId, startDate, endDate, intervalMonths) {
@@ -90,10 +134,16 @@ router.get('/', protect, async (req, res) => {
     const contracts = await Contract.findAll({
       where,
       include: [{ model: Hospital, as: 'hospital' }],
-      order: [['startDate', 'DESC']]
+      order: [['createdAt', 'DESC']]
     });
 
-    res.json(contracts);
+    const today = todayDateOnly();
+    const result = await Promise.all(contracts.map(async (contract) => ({
+      ...contract.toJSON(),
+      maCycle: await getCurrentMaCycle(contract, today)
+    })));
+
+    res.json(result);
   } catch (error) {
     logger.error(`Get contracts error: ${error.message}`);
     sendServerError(res);
@@ -231,7 +281,7 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
     await contract.reload({ include: [{ model: Hospital, as: 'hospital' }] });
 
     logger.info(`Contract added: ${contract.contractNumber} (${hospital.name})`);
-    res.status(201).json(contract);
+    res.status(201).json({ ...contract.toJSON(), maCycle: await getCurrentMaCycle(contract, todayDateOnly()) });
   } catch (error) {
     logger.error(`Create contract error: ${error.message}`);
     sendServerError(res);
@@ -275,7 +325,7 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
     await contract.reload({ include: [{ model: Hospital, as: 'hospital' }] });
 
     logger.info(`Contract updated: ${contract.contractNumber} (${hospital.name})`);
-    res.json(contract);
+    res.json({ ...contract.toJSON(), maCycle: await getCurrentMaCycle(contract, todayDateOnly()) });
   } catch (error) {
     logger.error(`Update contract error: ${error.message}`);
     sendServerError(res);

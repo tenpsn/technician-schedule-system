@@ -40,7 +40,7 @@ interface TypeBreakdown {
         <div class="search-bar" *ngIf="!loading && technicians.length">
           <div class="search-box">
             <span>⌕</span>
-            <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']">
+            <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']" (ngModelChange)="applyFilter()">
           </div>
           <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredTechnicians.length }} / {{ technicians.length }}</span>
         </div>
@@ -63,7 +63,7 @@ interface TypeBreakdown {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let t of filteredTechnicians" class="tech-row" [class.selected]="selectedTechId === t._id" (click)="selectTech(t._id)">
+              <tr *ngFor="let t of pagedTechnicians" class="tech-row" [class.selected]="selectedTechId === t._id" (click)="selectTech(t._id)">
                 <td>
                   <span class="tech-cell">
                     <span class="tech-avatar" [style.background]="avatarColor(t.fullName)">{{ initials(t.fullName) }}</span>
@@ -97,6 +97,17 @@ interface TypeBreakdown {
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        <div class="pagination-bar" *ngIf="filteredTechnicians.length > pageSize">
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goFirst()">{{ i18n.t['pageFirst'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goPrev()">{{ i18n.t['pagePrev'] }}</button>
+          <span class="page-jump">
+            <input type="number" min="1" [max]="totalPages" [ngModel]="currentPage" (ngModelChange)="goToPage($event)" class="page-input">
+            <span class="muted">/ {{ totalPages }}</span>
+          </span>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goNext()">{{ i18n.t['next'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goLast()">{{ i18n.t['pageLast'] }}</button>
         </div>
       </div>
 
@@ -318,6 +329,17 @@ interface TypeBreakdown {
     .status-pill.st-overdue { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-line); }
     .status-pill.st-cancelled { opacity: .7; text-decoration: line-through; }
 
+    .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line2); }
+    .btn-page { border-radius: var(--radius); height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-page:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-page:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-jump { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 0 4px; }
+    .page-input { width: 52px; height: 36px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--field); color: var(--ink); text-align: center; font-size: 13px; }
+    .page-input:focus { border-color: var(--accent); outline: none; }
+    .page-input::-webkit-outer-spin-button,
+    .page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .page-input[type=number] { -moz-appearance: textfield; }
+
     @media (max-width: 1100px) {
       .layout { flex-direction: column; }
       .list-card, .detail-card { flex: 1 1 auto; width: 100%; }
@@ -333,6 +355,7 @@ interface TypeBreakdown {
 })
 export class TechDashboardComponent implements OnInit {
   technicians: User[] = [];
+  filteredTechnicians: User[] = [];
   orders: WorkOrder[] = [];
   loading = false;
   viewMode: 'month' | 'year' = 'month';
@@ -340,6 +363,8 @@ export class TechDashboardComponent implements OnInit {
   selectedYear: number = new Date().getFullYear();
   selectedTechId: string | null = null;
   searchText = '';
+  pageSize = 10;
+  currentPage = 1;
   jobFilter: 'all' | 'completed' | 'cancelled' | 'overdue' | 'rescheduled' = 'all';
   typeFilter: string | null = null;
   dayFilter: number | null = null;
@@ -386,12 +411,33 @@ export class TechDashboardComponent implements OnInit {
     return this.technicians.slice().sort((a, b) => this.assignedOf(b._id).length - this.assignedOf(a._id).length);
   }
 
-  get filteredTechnicians(): User[] {
+  applyFilter(resetPage: boolean = true) {
     const q = this.searchText.trim().toLowerCase();
     const list = this.sortedTechnicians;
-    if (!q) return list;
-    return list.filter(t => t.fullName.toLowerCase().includes(q));
+    this.filteredTechnicians = q
+      ? list.filter(t => t.fullName.toLowerCase().includes(q))
+      : list;
+    this.currentPage = resetPage ? 1 : Math.min(this.currentPage, this.totalPages);
   }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredTechnicians.length / this.pageSize));
+  }
+
+  get pagedTechnicians(): User[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredTechnicians.slice(start, start + this.pageSize);
+  }
+
+  goToPage(page: number) {
+    const target = Math.floor(page) || 1;
+    this.currentPage = Math.min(Math.max(1, target), this.totalPages);
+  }
+
+  goFirst() { this.goToPage(1); }
+  goPrev() { this.goToPage(this.currentPage - 1); }
+  goNext() { this.goToPage(this.currentPage + 1); }
+  goLast() { this.goToPage(this.totalPages); }
 
   get detailTarget(): { _id: string; fullName: string; role: string } | null {
     if (this.selectedTechId === this.ALL_ID) {
@@ -406,7 +452,11 @@ export class TechDashboardComponent implements OnInit {
 
   ngOnInit() {
     this.userService.getTeamMembers().subscribe({
-      next: (list) => { this.technicians = list; this.cdr.detectChanges(); },
+      next: (list) => {
+        this.technicians = list;
+        this.applyFilter(false);
+        this.cdr.detectChanges();
+      },
       error: (err) => console.error('Error loading team members:', err)
     });
     this.workOrderService.getWorkTypes().subscribe(meta => {
@@ -432,6 +482,7 @@ export class TechDashboardComponent implements OnInit {
     this.workOrderService.getAllOrders(month, this.selectedYear).subscribe({
       next: (orders) => {
         this.orders = orders;
+        this.applyFilter();
         this.loading = false;
         this.cdr.detectChanges();
       },

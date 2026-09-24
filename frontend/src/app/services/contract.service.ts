@@ -5,6 +5,12 @@ import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { Hospital } from './hospital.service';
 
+export interface MaCycle {
+  sequenceNo: number;
+  daysLeft: number;
+  assigned: boolean;
+}
+
 export interface Contract {
   _id: string;
   hospitalId: string;
@@ -13,6 +19,7 @@ export interface Contract {
   endDate: string;
   maIntervalMonths: number;
   hospital?: Hospital;
+  maCycle?: MaCycle | null;
 }
 
 export interface MaVisitWorkOrder {

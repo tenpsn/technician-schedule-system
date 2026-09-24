@@ -6,33 +6,59 @@ const { formatThaiDate } = require('../utils/dateFormat');
 const { isRepairType, isInstallationType } = require('../config/workTypes');
 const logger = require('../config/logger');
 
+// ต่อจากเลขที่สูงสุดที่มีอยู่จริง ไม่ใช่นับจำนวนแถว เพราะถ้ามีใบงานตรงกลางถูกลบไปก่อนหน้า (เช่น ยกเลิกสัญญาแล้วลบใบงาน MA ที่เกิดจากสัญญานั้น)
+// จำนวนแถวจะน้อยกว่าตัวเลขสูงสุดที่เคยใช้ไปแล้ว นับ+1 แบบเดิมจะได้เลขที่ซ้ำกับที่มีอยู่จริงเสมอ ไม่ใช่แค่ตอนชนกันพร้อมกัน
 const generateSRNumber = async () => {
   const now = new Date();
   const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const count = await WorkOrder.count({
-    where: { srNumber: { [Op.like]: `SR-${yearMonth}%` } }
+  const prefix = `SR-${yearMonth}-`;
+  const latest = await WorkOrder.findOne({
+    where: { srNumber: { [Op.like]: `${prefix}%` } },
+    order: [['srNumber', 'DESC']],
+    attributes: ['srNumber']
   });
-  return `SR-${yearMonth}-${String(count + 1).padStart(4, '0')}`;
+  const nextSeq = latest ? parseInt(latest.srNumber.slice(prefix.length), 10) + 1 : 1;
+  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
 };
+
+const isDuplicateSRNumber = (error) => error.name === 'SequelizeUniqueConstraintError'
+  && (error.errors || []).some((e) => e.path === 'srNumber');
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const MAX_SR_NUMBER_RETRIES = 10;
 
 // สร้างใบงานและแจ้งเตือนหัวหน้างาน ใช้ร่วมกันทั้ง HTTP route และ LINE bot
 // เพื่อให้เลข SR และการแจ้งเตือนขออนุมัติตรงกันเสมอ
 const createWorkOrder = async ({ technician, customerName, customerLocation, workType,
   description, plannedDate, plannedStartTime, plannedEndTime }) => {
-  const srNumber = await generateSRNumber();
-
-  const workOrder = await WorkOrder.create({
-    srNumber,
-    technicianId: technician.id,
-    customerName,
-    customerLocation,
-    workType,
-    description,
-    plannedDate,
-    plannedStartTime,
-    plannedEndTime,
-    status: 'pending_approval'
-  });
+  // generateSRNumber นับแถวที่มีอยู่แล้ว +1 ถ้ามีคำขอสร้างใบงานพร้อมกันหลายอันในวินาทีเดียวกัน
+  // จะนับได้เลขซ้ำกันได้ ตรงนี้เลย retry คำนวณเลขใหม่เฉพาะตอนชนกันจริงๆ (unique constraint ที่ DB เป็นคนเช็คให้)
+  let srNumber;
+  let workOrder;
+  for (let attempt = 1; ; attempt++) {
+    srNumber = await generateSRNumber();
+    try {
+      workOrder = await WorkOrder.create({
+        srNumber,
+        technicianId: technician.id,
+        customerName,
+        customerLocation,
+        workType,
+        description,
+        plannedDate,
+        plannedStartTime,
+        plannedEndTime,
+        status: 'pending_approval'
+      });
+      break;
+    } catch (error) {
+      if (!isDuplicateSRNumber(error) || attempt >= MAX_SR_NUMBER_RETRIES) throw error;
+      logger.warn(`SR number collision on ${srNumber}, retrying (attempt ${attempt})`);
+      // สุ่มหน่วงเวลาสั้นๆ ก่อนลองใหม่ กันไม่ให้คำขอที่ชนกันรอบแรกไปนับเลขซ้ำกันอีกในรอบถัดไปพร้อมๆ กัน
+      await sleep(20 + Math.random() * 80 * attempt);
+    }
+  }
 
   const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
   for (const sup of supervisors) {

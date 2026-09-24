@@ -33,7 +33,8 @@ const Contract = sequelize.define('Contract', {
   }
 }, {
   tableName: 'contracts',
-  timestamps: false,
+  timestamps: true,
+  updatedAt: false,
   indexes: [
     { fields: ['hospitalId'] }
   ]

@@ -54,7 +54,7 @@ import { I18nService } from '../../services/i18n.service';
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let h of filteredHospitals">
+              <tr *ngFor="let h of pagedHospitals">
                 <td>{{ h.name }}</td>
                 <td class="muted">{{ h.address }}</td>
                 <td class="muted">{{ h.facilityCode || '-' }}</td>
@@ -68,6 +68,17 @@ import { I18nService } from '../../services/i18n.service';
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="pagination-bar" *ngIf="filteredHospitals.length > pageSize">
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goFirst()">{{ i18n.t['pageFirst'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === 1" (click)="goPrev()">{{ i18n.t['pagePrev'] }}</button>
+          <span class="page-jump">
+            <input type="number" min="1" [max]="totalPages" [ngModel]="currentPage" (ngModelChange)="goToPage($event)" class="page-input">
+            <span class="muted">/ {{ totalPages }}</span>
+          </span>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goNext()">{{ i18n.t['next'] }}</button>
+          <button type="button" class="btn-page" [disabled]="currentPage === totalPages" (click)="goLast()">{{ i18n.t['pageLast'] }}</button>
         </div>
       </div>
 
@@ -148,6 +159,17 @@ import { I18nService } from '../../services/i18n.service';
     .btn-edit { border-radius: var(--radius); height: 34px; padding: 0 12px; margin-right: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
 
+    .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line2); }
+    .btn-page { border-radius: var(--radius); height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .btn-page:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-page:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-jump { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin: 0 4px; }
+    .page-input { width: 52px; height: 36px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--field); color: var(--ink); text-align: center; font-size: 13px; }
+    .page-input:focus { border-color: var(--accent); outline: none; }
+    .page-input::-webkit-outer-spin-button,
+    .page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .page-input[type=number] { -moz-appearance: textfield; }
+
     .modal-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62); display: flex; align-items: center; justify-content: center; padding: 18px; animation: veilIn .16s ease both; }
     .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease backwards; }
     .modal-title { font-size: 18px; font-weight: 700; }
@@ -173,6 +195,8 @@ export class HospitalSettingsComponent implements OnInit {
   hospitals: Hospital[] = [];
   filteredHospitals: Hospital[] = [];
   filterText = '';
+  pageSize = 10;
+  currentPage = 1;
   deleteTarget: Hospital | null = null;
   editTarget: Hospital | null = null;
 
@@ -204,7 +228,7 @@ export class HospitalSettingsComponent implements OnInit {
     this.hospitalService.getAll().subscribe({
       next: (hospitals) => {
         this.hospitals = hospitals;
-        this.applyFilter();
+        this.applyFilter(false);
         this.loading = false;
         this.cdr.detectChanges();
       },
@@ -217,12 +241,36 @@ export class HospitalSettingsComponent implements OnInit {
     });
   }
 
-  applyFilter() {
-    const q = this.filterText.trim();
+  applyFilter(resetPage: boolean = true) {
+    const q = this.filterText.trim().toLowerCase();
     this.filteredHospitals = q
-      ? this.hospitals.filter(h => h.name.includes(q) || h.address.includes(q))
+      ? this.hospitals.filter(h =>
+          h.name.toLowerCase().includes(q) ||
+          (h.facilityCode || '').toLowerCase().includes(q) ||
+          (h.address || '').toLowerCase().includes(q)
+        )
       : this.hospitals;
+    this.currentPage = resetPage ? 1 : Math.min(this.currentPage, this.totalPages);
   }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredHospitals.length / this.pageSize));
+  }
+
+  get pagedHospitals(): Hospital[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredHospitals.slice(start, start + this.pageSize);
+  }
+
+  goToPage(page: number) {
+    const target = Math.floor(page) || 1;
+    this.currentPage = Math.min(Math.max(1, target), this.totalPages);
+  }
+
+  goFirst() { this.goToPage(1); }
+  goPrev() { this.goToPage(this.currentPage - 1); }
+  goNext() { this.goToPage(this.currentPage + 1); }
+  goLast() { this.goToPage(this.totalPages); }
 
   onSubmit() {
     if (this.form.invalid) return;
@@ -233,7 +281,7 @@ export class HospitalSettingsComponent implements OnInit {
     this.hospitalService.create(name, address, facilityCode).subscribe({
       next: (hospital) => {
         this.hospitals = [...this.hospitals, hospital].sort((a, b) => a.name.localeCompare(b.name));
-        this.applyFilter();
+        this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastHospital']} · ${hospital.name}`);
         this.form.reset();
         this.saving = false;
@@ -263,7 +311,7 @@ export class HospitalSettingsComponent implements OnInit {
         this.hospitals = this.hospitals
           .map(h => h._id === updated._id ? updated : h)
           .sort((a, b) => a.name.localeCompare(b.name));
-        this.applyFilter();
+        this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastHospitalUpdated']} · ${updated.name}`);
         this.editSaving = false;
         this.editTarget = null;
@@ -288,7 +336,7 @@ export class HospitalSettingsComponent implements OnInit {
     this.hospitalService.delete(target._id).subscribe({
       next: () => {
         this.hospitals = this.hospitals.filter(h => h._id !== target._id);
-        this.applyFilter();
+        this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastDeleted']} · ${target.name}`);
         this.deleteTarget = null;
         this.cdr.detectChanges();
