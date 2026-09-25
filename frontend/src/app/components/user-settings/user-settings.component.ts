@@ -95,7 +95,7 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
                     <button (click)="cancelEdit()" [disabled]="savingEdit" class="btn-cancel">{{ i18n.t['cancel'] }}</button>
                   </ng-container>
                   <ng-template #viewActions>
-                    <button (click)="startEdit(u)" class="btn-edit">{{ i18n.t['edit'] }}</button>
+                    <button (click)="startEdit(u)" [disabled]="u.active === false" class="btn-edit">{{ i18n.t['edit'] }}</button>
                     <button *ngIf="u.active !== false" (click)="confirmToggle(u, false)" [disabled]="isSelf(u)" class="btn-delete">
                       {{ i18n.t['deactivate'] }}
                     </button>
@@ -196,7 +196,8 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
     .btn-activate:hover { filter: brightness(1.07); }
 
     .btn-edit { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
-    .btn-edit:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-edit:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-edit:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-save { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn-save:hover:not(:disabled) { background: var(--accent-hover); }
     .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }

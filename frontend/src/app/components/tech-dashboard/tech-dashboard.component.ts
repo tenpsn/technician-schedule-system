@@ -59,7 +59,6 @@ interface TypeBreakdown {
                 <th>{{ i18n.statusLabel('overdue') }}</th>
                 <th>{{ i18n.t['colRescheduled'] }}</th>
                 <th>{{ i18n.t['colHoursWorked'] }}</th>
-                <th>{{ i18n.t['colDaysWorked'] }}</th>
               </tr>
             </thead>
             <tbody>
@@ -77,10 +76,9 @@ interface TypeBreakdown {
                 <td class="mono">{{ overdueOf(t._id).length }}</td>
                 <td class="mono">{{ rescheduleEventCountOf(t._id) }}</td>
                 <td class="mono">{{ hoursOf(t._id) }} {{ i18n.t['hoursUnit'] }}</td>
-                <td class="mono">{{ daysWorkedCountOf(t._id) }}</td>
               </tr>
               <tr *ngIf="filteredTechnicians.length === 0">
-                <td colspan="9" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="8" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
             <tfoot *ngIf="technicians.length > 0">
@@ -93,7 +91,6 @@ interface TypeBreakdown {
                 <td class="mono">{{ overdueOf(ALL_ID).length }}</td>
                 <td class="mono">{{ rescheduleEventCountOf(ALL_ID) }}</td>
                 <td class="mono">{{ hoursOf(ALL_ID) }} {{ i18n.t['hoursUnit'] }}</td>
-                <td class="mono">{{ daysWorkedCountOf(ALL_ID) }}</td>
               </tr>
             </tfoot>
           </table>
@@ -145,23 +142,9 @@ interface TypeBreakdown {
             <div class="stat-value mono">{{ hoursOf(tech._id) }} {{ i18n.t['hoursUnit'] }}</div>
             <div class="stat-label">{{ i18n.t['colHoursWorked'] }}</div>
           </div>
-          <div class="stat-tile">
-            <div class="stat-value mono">{{ daysWorkedCountOf(tech._id) }}</div>
-            <div class="stat-label">{{ i18n.t['colDaysWorked'] }}</div>
-          </div>
         </div>
 
         <div class="detail-body">
-          <div class="type-panel">
-            <div class="panel-title">{{ i18n.t['jobTypeBreakdown'] }} <span class="scope-tag">({{ scopeLabel }})</span></div>
-            <button type="button" class="type-row clickable" *ngFor="let tb of typeBreakdownOf(tech._id)" [class.active]="typeFilter === tb.type" (click)="setTypeFilter(tb.type)">
-              <span class="type-name">{{ i18n.typeLabel(tb.type) }}</span>
-              <div class="type-bar-track"><div class="type-bar-fill" [style.width.%]="tb.pct"></div></div>
-              <span class="type-count mono">{{ tb.count }}</span>
-            </button>
-            <div *ngIf="typeBreakdownOf(tech._id).length === 0" class="empty-note">{{ i18n.t[noJobsKey] }}</div>
-          </div>
-
           <div class="calendar-panel" *ngIf="viewMode === 'month'">
             <div class="panel-title">{{ i18n.t['dailyCalendar'] }} <span class="scope-tag">({{ scopeLabel }})</span></div>
             <div class="mini-dow">
@@ -183,6 +166,16 @@ interface TypeBreakdown {
               <div class="type-bar-track"><div class="type-bar-fill" [style.width.%]="mb.pct"></div></div>
               <span class="type-count mono">{{ mb.count }}</span>
             </div>
+          </div>
+
+          <div class="type-panel">
+            <div class="panel-title">{{ i18n.t['jobTypeBreakdown'] }} <span class="scope-tag">({{ scopeLabel }})</span></div>
+            <button type="button" class="type-row clickable" *ngFor="let tb of typeBreakdownOf(tech._id)" [class.active]="typeFilter === tb.type" (click)="setTypeFilter(tb.type)">
+              <span class="type-name">{{ i18n.typeLabel(tb.type) }}</span>
+              <div class="type-bar-track"><div class="type-bar-fill" [style.width.%]="tb.pct"></div></div>
+              <span class="type-count mono">{{ tb.count }}</span>
+            </button>
+            <div *ngIf="typeBreakdownOf(tech._id).length === 0" class="empty-note">{{ i18n.t[noJobsKey] }}</div>
           </div>
         </div>
 
@@ -206,13 +199,13 @@ interface TypeBreakdown {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let o of jobsOf(tech._id)" (click)="viewOrder(o._id)" class="clickable">
+              <tr *ngFor="let o of pagedJobsOf(tech._id)" (click)="viewOrder(o._id)" class="clickable">
                 <td class="mono">{{ o.srNumber }}</td>
                 <td class="mono">
                   {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}
                   <div class="resched-note" *ngIf="firstRescheduleDate(o) as fromDate" [title]="i18n.t['rescheduleHistory']">
-                    ↺ {{ fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}
-                    <span *ngIf="rescheduleCountOf(o) > 1">({{ i18n.t['rescheduledCountLabel'] }} {{ rescheduleCountOf(o) }} {{ i18n.t['timesWord'] }})</span>
+                    <div>↺ {{ fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}</div>
+                    <div *ngIf="rescheduleCountOf(o) > 1">{{ i18n.t['rescheduledCountLabel'] }} {{ rescheduleCountOf(o) }} {{ i18n.t['timesWord'] }}</div>
                   </div>
                 </td>
                 <td><span class="badge">{{ i18n.typeLabel(o.workType) }}</span></td>
@@ -227,6 +220,17 @@ interface TypeBreakdown {
             </tbody>
           </table>
         </div>
+
+        <div class="pagination-bar" *ngIf="jobsOf(tech._id).length > jobListPageSize">
+          <button type="button" class="btn-page" [disabled]="jobListPage === 1" (click)="goJobFirst(tech._id)">{{ i18n.t['pageFirst'] }}</button>
+          <button type="button" class="btn-page" [disabled]="jobListPage === 1" (click)="goJobPrev(tech._id)">{{ i18n.t['pagePrev'] }}</button>
+          <span class="page-jump">
+            <input type="number" min="1" [max]="jobListTotalPages(tech._id)" [ngModel]="jobListPage" (ngModelChange)="goToJobPage($event, tech._id)" class="page-input">
+            <span class="muted">/ {{ jobListTotalPages(tech._id) }}</span>
+          </span>
+          <button type="button" class="btn-page" [disabled]="jobListPage === jobListTotalPages(tech._id)" (click)="goJobNext(tech._id)">{{ i18n.t['next'] }}</button>
+          <button type="button" class="btn-page" [disabled]="jobListPage === jobListTotalPages(tech._id)" (click)="goJobLast(tech._id)">{{ i18n.t['pageLast'] }}</button>
+        </div>
       </div>
       </div>
     </div>
@@ -234,8 +238,8 @@ interface TypeBreakdown {
   styles: [`
     .page { padding: 24px 18px 44px; max-width: 1500px; margin: 0 auto; }
     .layout { display: flex; align-items: flex-start; gap: 18px; }
-    .list-card { flex: 1.2 1 560px; min-width: 0; }
-    .detail-card { flex: 1 1 460px; min-width: 0; }
+    .list-card { flex: 55 1 0; min-width: 0; }
+    .detail-card { flex: 45 1 0; min-width: 0; }
     .card { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line2); }
     .head-title { font-size: 18px; font-weight: 700; }
@@ -265,6 +269,7 @@ interface TypeBreakdown {
 
     .table-scroll { overflow-x: auto; }
     .data-table { width: 100%; min-width: 760px; border-collapse: collapse; }
+    .detail-card .data-table { min-width: 960px; }
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line2); font-size: 13px; }
     .tech-row { cursor: pointer; }
@@ -368,6 +373,8 @@ export class TechDashboardComponent implements OnInit {
   jobFilter: 'all' | 'completed' | 'cancelled' | 'overdue' | 'rescheduled' = 'all';
   typeFilter: string | null = null;
   dayFilter: number | null = null;
+  jobListPageSize = 5;
+  jobListPage = 1;
 
   years = Array.from({ length: 41 }, (_, i) => new Date().getFullYear() - 20 + i);
   readonly ALL_ID = '__ALL__';
@@ -478,6 +485,7 @@ export class TechDashboardComponent implements OnInit {
     this.jobFilter = 'all';
     this.typeFilter = null;
     this.dayFilter = null;
+    this.jobListPage = 1;
     const month = this.viewMode === 'month' ? this.selectedMonth : undefined;
     this.workOrderService.getAllOrders(month, this.selectedYear).subscribe({
       next: (orders) => {
@@ -499,25 +507,30 @@ export class TechDashboardComponent implements OnInit {
     this.jobFilter = 'all';
     this.typeFilter = null;
     this.dayFilter = null;
+    this.jobListPage = 1;
   }
 
   setJobFilter(filter: 'all' | 'completed' | 'cancelled' | 'overdue' | 'rescheduled') {
     this.jobFilter = this.jobFilter === filter ? 'all' : filter;
     this.dayFilter = null;
+    this.jobListPage = 1;
   }
 
   setTypeFilter(type: string) {
     this.typeFilter = this.typeFilter === type ? null : type;
+    this.jobListPage = 1;
   }
 
   toggleDayFilter(day: number) {
     this.dayFilter = this.dayFilter === day ? null : day;
+    this.jobListPage = 1;
   }
 
   clearJobListFilters() {
     this.jobFilter = 'all';
     this.typeFilter = null;
     this.dayFilter = null;
+    this.jobListPage = 1;
   }
 
   private techIdOf(order: WorkOrder): string | null {
@@ -554,6 +567,25 @@ export class TechDashboardComponent implements OnInit {
       .filter(o => this.matchesJobFilter(o) && this.matchesTypeFilter(o) && this.matchesDayFilter(o))
       .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime());
   }
+
+  jobListTotalPages(techId: string): number {
+    return Math.max(1, Math.ceil(this.jobsOf(techId).length / this.jobListPageSize));
+  }
+
+  pagedJobsOf(techId: string): WorkOrder[] {
+    const start = (this.jobListPage - 1) * this.jobListPageSize;
+    return this.jobsOf(techId).slice(start, start + this.jobListPageSize);
+  }
+
+  goToJobPage(page: number, techId: string) {
+    const target = Math.floor(page) || 1;
+    this.jobListPage = Math.min(Math.max(1, target), this.jobListTotalPages(techId));
+  }
+
+  goJobFirst(techId: string) { this.goToJobPage(1, techId); }
+  goJobPrev(techId: string) { this.goToJobPage(this.jobListPage - 1, techId); }
+  goJobNext(techId: string) { this.goToJobPage(this.jobListPage + 1, techId); }
+  goJobLast(techId: string) { this.goToJobPage(this.jobListTotalPages(techId), techId); }
 
   private matchesDayFilter(o: WorkOrder): boolean {
     return this.dayFilter == null || this.dateOf(o).getDate() === this.dayFilter;
@@ -619,33 +651,36 @@ export class TechDashboardComponent implements OnInit {
     return new Date(raw.getUTCFullYear(), raw.getUTCMonth(), raw.getUTCDate());
   }
 
-  daysWorkedCountOf(techId: string): number {
-    const days = new Set<string>();
-    for (const o of this.completedOf(techId)) {
-      const d = this.dateOf(o);
-      days.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
-    }
-    return days.size;
-  }
-
   get scopeLabel(): string {
-    const key = this.jobFilter === 'all' ? 'completed' : this.jobFilter;
+    const key = this.jobFilter === 'all' ? 'assigned' : this.jobFilter;
     const dictKey = 'scope' + key.charAt(0).toUpperCase() + key.slice(1);
     return this.i18n.t[dictKey];
   }
 
+  // ไม่กรองด้วย dayFilter เพราะปฏิทินมินิต้องยังไฮไลต์วันที่มีงานทั้งเดือนไว้เป็นข้อมูลอ้างอิง
+  // แม้ตอนนั้นจะเลือกดูวันใดวันหนึ่งอยู่ก็ตาม (ตัวเลือกวันที่กำลังเลือกอยู่ไฮไลต์แยกด้วย mini-cell.active)
   private analyticsSourceOf(techId: string): WorkOrder[] {
-    return this.jobFilter === 'all' ? this.completedOf(techId) : this.statusFilteredOf(techId);
+    return this.jobFilter === 'all' ? this.assignedOf(techId) : this.statusFilteredOf(techId);
+  }
+
+  // ใช้เฉพาะกับสัดส่วนประเภทงาน ให้กรองแคบลงตามวันที่เลือกด้วย ต่างจาก analyticsSourceOf ที่ปฏิทินมินิต้องใช้แบบไม่กรองวัน
+  private dayFilteredAnalyticsSourceOf(techId: string): WorkOrder[] {
+    return this.analyticsSourceOf(techId).filter(o => this.matchesDayFilter(o));
+  }
+
+  // ใช้เฉพาะกับปฏิทินมินิ/สรุปรายเดือน ให้กรองแคบลงตามประเภทงานที่เลือกด้วย ตรงข้ามกับสัดส่วนประเภทงานที่ต้องโชว์ทุกประเภทให้เลือกได้เสมอ
+  private typeFilteredAnalyticsSourceOf(techId: string): WorkOrder[] {
+    return this.analyticsSourceOf(techId).filter(o => this.matchesTypeFilter(o));
   }
 
   workedDayNumbersOf(techId: string): number[] {
-    return this.analyticsSourceOf(techId).map(o => this.dateOf(o).getDate());
+    return this.typeFilteredAnalyticsSourceOf(techId).map(o => this.dateOf(o).getDate());
   }
 
   monthlyBreakdownOf(techId: string): TypeBreakdown[] {
     const locale = this.i18n.lang === 'th' ? 'th-TH' : 'en-US';
     const counts = new Array(12).fill(0);
-    for (const o of this.analyticsSourceOf(techId)) counts[this.dateOf(o).getMonth()]++;
+    for (const o of this.typeFilteredAnalyticsSourceOf(techId)) counts[this.dateOf(o).getMonth()]++;
     const max = Math.max(1, ...counts);
     return counts.map((count, i) => ({
       type: String(i + 1),
@@ -663,7 +698,7 @@ export class TechDashboardComponent implements OnInit {
   }
 
   typeBreakdownOf(techId: string): TypeBreakdown[] {
-    const jobs = this.analyticsSourceOf(techId);
+    const jobs = this.dayFilteredAnalyticsSourceOf(techId);
     const counts = new Map<string, number>();
     for (const o of jobs) {
       const type = this.normalizeWorkType(o.workType);

@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
-import { ContractService, Contract, MaVisit, MaCycle } from '../../services/contract.service';
+import { ContractService, Contract, MaVisit, MaCurrentRound } from '../../services/contract.service';
 import { HospitalService, Hospital } from '../../services/hospital.service';
 import { UserService } from '../../services/user.service';
 import { I18nService } from '../../services/i18n.service';
@@ -75,6 +75,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
               <tr>
                 <th class="col-alert">{{ i18n.t['maCurrentCycle'] }}</th>
                 <th>{{ i18n.t['hospitalName'] }}</th>
+                <th>{{ i18n.t['hospitalFacilityCode'] }}</th>
                 <th>{{ i18n.t['contractNumber'] }}</th>
                 <th>{{ i18n.t['contractStart'] }}</th>
                 <th>{{ i18n.t['contractEnd'] }}</th>
@@ -84,12 +85,13 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let c of pagedContracts" [class.row-urgent]="isMaUrgent(c)">
+              <tr *ngFor="let c of pagedContracts" [class.row-danger]="isMaOverdue(c)" [class.row-warn]="!isMaOverdue(c) && isMaWarn(c)">
                 <td class="ma-cell">
-                  <span *ngIf="c.maCycle as mc; else maCycleNone" [class.urgent]="isMaUrgent(c)">{{ maCycleWarning(mc) }}</span>
-                  <ng-template #maCycleNone><span class="muted">–</span></ng-template>
+                  <div *ngFor="let line of maCycleLines(c)" [ngClass]="'ma-line-' + line.severity">{{ line.text }}</div>
+                  <span *ngIf="maCycleLines(c).length === 0" class="muted">–</span>
                 </td>
                 <td>{{ c.hospital?.name }}</td>
+                <td class="muted">{{ c.hospital?.facilityCode || '-' }}</td>
                 <td class="muted">{{ c.contractNumber }}</td>
                 <td class="muted">{{ c.startDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
                 <td class="muted">{{ c.endDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
@@ -101,7 +103,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 </td>
               </tr>
               <tr *ngIf="filteredContracts.length === 0">
-                <td colspan="8" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="9" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
@@ -264,13 +266,17 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 12px 20px; border-bottom: 1px solid var(--line2); font-size: 13.5px; }
     .muted { color: var(--sub); }
-    .col-ma { width: 170px; }
+    .col-ma { width: 110px; }
     .col-status { width: 140px; }
     .col-actions { width: 170px; }
     .col-alert { width: 220px; }
-    .ma-cell span.urgent { color: var(--danger-text); font-weight: 600; }
-    .row-urgent { background: var(--danger-bg); }
-    .row-urgent:hover { background: var(--danger-bg); }
+    .ma-cell { white-space: nowrap; }
+    .ma-cell .ma-line-danger { color: var(--danger-text); font-weight: 600; }
+    .ma-cell .ma-line-warn { color: var(--warn-text); font-weight: 600; }
+    .row-danger { background: var(--danger-bg); }
+    .row-danger:hover { background: var(--danger-bg); }
+    .row-warn { background: var(--warn-bg); }
+    .row-warn:hover { background: var(--warn-bg); }
     .status-badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
     .status-active { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-line); }
     .status-expiring { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-line); }
@@ -413,22 +419,50 @@ export class ContractSettingsComponent implements OnInit {
     return this.i18n.lang === 'th' ? `ทุก ${months} เดือน` : `Every ${months} months`;
   }
 
-  isMaUrgent(c: Contract): boolean {
-    return !!c.maCycle && !c.maCycle.assigned && c.maCycle.daysLeft <= 10;
+  private currentRoundLine(round: MaCurrentRound): { text: string; severity: 'danger' | 'warn' | 'none' } {
+    if (round.assigned) {
+      return {
+        text: this.i18n.lang === 'th' ? `MA รอบที่ ${round.sequenceNo} มอบหมายแล้ว` : `MA round ${round.sequenceNo} assigned`,
+        severity: 'none'
+      };
+    }
+    if (round.daysLeft <= 10) {
+      return {
+        text: this.i18n.lang === 'th'
+          ? `MA รอบที่ ${round.sequenceNo} เหลือเวลาอีก ${round.daysLeft} วัน กรุณามอบหมายงาน`
+          : `MA round ${round.sequenceNo} has ${round.daysLeft} days left, please assign`,
+        severity: 'warn'
+      };
+    }
+    return {
+      text: this.i18n.lang === 'th'
+        ? `MA รอบที่ ${round.sequenceNo} ยังไม่ได้มอบหมาย`
+        : `MA round ${round.sequenceNo} not yet assigned`,
+      severity: 'none'
+    };
   }
 
-  maCycleWarning(mc: MaCycle): string {
-    if (mc.assigned) {
-      return this.i18n.lang === 'th' ? `MA รอบที่ ${mc.sequenceNo} มอบหมายแล้ว` : `MA round ${mc.sequenceNo} assigned`;
-    }
-    if (mc.daysLeft <= 10) {
-      return this.i18n.lang === 'th'
-        ? `MA รอบที่ ${mc.sequenceNo} เหลือเวลาอีก ${mc.daysLeft} วัน กรุณามอบหมายงาน`
-        : `MA round ${mc.sequenceNo} — ${mc.daysLeft} day(s) left, please assign`;
-    }
-    return this.i18n.lang === 'th'
-      ? `MA รอบที่ ${mc.sequenceNo} ยังไม่ได้มอบหมาย`
-      : `MA round ${mc.sequenceNo} not yet assigned`;
+  // แสดงทุกรอบที่ค้าง (เลยกำหนดไปแล้วแต่ยังไม่มอบหมาย) ก่อน แล้วตามด้วยรอบปัจจุบัน (ถ้ามี)
+  // เลยกำหนดแล้ว = แดง (severity: danger), รอบปัจจุบันที่ยังไม่มอบหมายและใกล้ครบกำหนด = เหลือง (severity: warn)
+  maCycleLines(c: Contract): { text: string; severity: 'danger' | 'warn' | 'none' }[] {
+    const mc = c.maCycle;
+    if (!mc) return [];
+    const lines: { text: string; severity: 'danger' | 'warn' | 'none' }[] = mc.overdue.map((o) => ({
+      text: this.i18n.lang === 'th'
+        ? `MA รอบที่ ${o.sequenceNo} เลยกำหนด ${o.daysOverdue} วัน`
+        : `MA round ${o.sequenceNo} is ${o.daysOverdue} days overdue`,
+      severity: 'danger'
+    }));
+    if (mc.current) lines.push(this.currentRoundLine(mc.current));
+    return lines;
+  }
+
+  isMaOverdue(c: Contract): boolean {
+    return this.maCycleLines(c).some((line) => line.severity === 'danger');
+  }
+
+  isMaWarn(c: Contract): boolean {
+    return this.maCycleLines(c).some((line) => line.severity === 'warn');
   }
 
   applyFilter(resetPage: boolean = true) {
@@ -436,6 +470,7 @@ export class ContractSettingsComponent implements OnInit {
     this.filteredContracts = q
       ? this.contracts.filter(c =>
           (c.hospital?.name || '').toLowerCase().includes(q) ||
+          (c.hospital?.facilityCode || '').toLowerCase().includes(q) ||
           c.contractNumber.toLowerCase().includes(q)
         )
       : this.contracts;

@@ -1,4 +1,5 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
 import { WorkOrderService, WorkOrder } from '../../services/work-order.service';
 import { AuthService } from '../../services/auth.service';
 import { I18nService } from '../../services/i18n.service';
@@ -47,7 +48,7 @@ import { I18nService } from '../../services/i18n.service';
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let order of pagedOrders">
+              <tr *ngFor="let order of pagedOrders" class="clickable" (click)="viewOrder(order._id)">
                 <td class="mono">{{ order.srNumber }}</td>
                 <td>{{ order.customerName }}</td>
                 <td><span class="badge">{{ i18n.typeLabel(order.workType) }}</span></td>
@@ -105,6 +106,8 @@ import { I18nService } from '../../services/i18n.service';
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line2); font-size: 13px; }
     .reason-cell { max-width: 260px; color: var(--sub); font-size: 12.5px; }
+    .clickable { cursor: pointer; }
+    .clickable:hover { background: var(--alt); }
     .badge { display: inline-block; padding: 2px 8px; background: var(--info-bg); color: var(--info-text); border: 1px solid var(--info-line); border-radius: var(--radius); font-size: 11.5px; font-weight: 600; }
 
     .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line2); }
@@ -153,8 +156,13 @@ export class CancelledOrdersComponent implements OnInit {
     private workOrderService: WorkOrderService,
     public auth: AuthService,
     public i18n: I18nService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private router: Router
   ) {}
+
+  viewOrder(id: string) {
+    this.router.navigate(['/work-orders', id]);
+  }
 
   applyFilter(resetPage: boolean = true) {
     const q = this.searchText.trim().toLowerCase();

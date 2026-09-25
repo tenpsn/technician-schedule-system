@@ -21,11 +21,11 @@ const NOTIF_POLL_MS = 30000;
 
         <nav class="top-nav">
           <a routerLink="/calendar" routerLinkActive="active">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</a>
-          <div class="nav-dropdown" *ngIf="auth.isSupervisor">
+          <div class="nav-dropdown">
             <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">{{ i18n.t['navJobs'] }}</button>
             <div class="nav-dropdown-menu" *ngIf="showJobsMenu">
               <button class="nav-dropdown-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
-              <button class="nav-dropdown-item" *ngIf="auth.isSupervisor" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
+              <button class="nav-dropdown-item" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
             </div>
           </div>
           <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">{{ i18n.t['navDashboard'] }}</a>
@@ -103,13 +103,13 @@ const NOTIF_POLL_MS = 30000;
         <a routerLink="/calendar" routerLinkActive="active">
           <span class="glyph">▦</span><span class="label">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</span>
         </a>
-        <div class="bottom-nav-dropdown" *ngIf="auth.isSupervisor">
+        <div class="bottom-nav-dropdown">
           <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">
             <span class="glyph">✚</span><span class="label">{{ i18n.t['navJobs'] }}</span>
           </button>
           <div class="bottom-nav-menu" *ngIf="showJobsMenu">
             <button class="bottom-nav-menu-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
-            <button class="bottom-nav-menu-item" *ngIf="auth.isSupervisor" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
+            <button class="bottom-nav-menu-item" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
           </div>
         </div>
         <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">

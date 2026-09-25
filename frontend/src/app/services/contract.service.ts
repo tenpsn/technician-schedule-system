@@ -5,10 +5,20 @@ import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { Hospital } from './hospital.service';
 
-export interface MaCycle {
+export interface MaOverdueRound {
+  sequenceNo: number;
+  daysOverdue: number;
+}
+
+export interface MaCurrentRound {
   sequenceNo: number;
   daysLeft: number;
   assigned: boolean;
+}
+
+export interface MaCycle {
+  overdue: MaOverdueRound[];
+  current: MaCurrentRound | null;
 }
 
 export interface Contract {

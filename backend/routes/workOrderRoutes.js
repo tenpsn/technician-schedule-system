@@ -384,10 +384,14 @@ router.get('/status/overdue', protect, authorize('supervisor', 'admin'), async (
 });
 
 // ดึงใบงานที่ถูกยกเลิก สำหรับรายงานและประวัติ
-router.get('/status/cancelled', protect, authorize('supervisor', 'admin'), async (req, res) => {
+// หัวหน้า/admin เห็นของทุกคน ส่วนช่างเทคนิคเห็นได้แค่ใบงานของตัวเอง
+router.get('/status/cancelled', protect, async (req, res) => {
   try {
     const { month, year } = req.query;
     const where = { status: 'cancelled' };
+    if (!isSupervisorRole(req.user.role)) {
+      where.technicianId = req.user.id;
+    }
 
     if (month && year) {
       const { start, end } = monthRangeUTC(year, month);

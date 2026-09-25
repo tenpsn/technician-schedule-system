@@ -1,5 +1,4 @@
 const express = require('express');
-const { Op } = require('sequelize');
 const Contract = require('../models/Contract');
 const Hospital = require('../models/Hospital');
 const MaVisit = require('../models/MaVisit');
@@ -75,31 +74,36 @@ function todayDateOnly() {
   return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())).toISOString().slice(0, 10);
 }
 
-// หารอบ MA ที่วันนี้ตกอยู่ในนั้น แล้วเช็คว่ารอบนี้มอบหมายช่างแล้วหรือยัง
+// ไล่ดูทุกรอบ MA ของสัญญา (ไม่ใช่แค่รอบที่วันนี้ตกอยู่) แยกเป็น 2 กลุ่ม:
+// - overdue: รอบที่ครบกำหนดไปแล้ว (periodEnd ผ่านมาแล้ว) แต่ยังไม่เคยมอบหมายช่าง ค้างมาจากรอบก่อนๆ
+// - current: รอบที่วันนี้ตกอยู่ในนั้นพอดี (อาจยังไม่มอบหมาย หรือมอบหมายแล้ว)
 // อ่านจาก contract.startDate/endDate/maIntervalMonths ตรงๆ ไม่พึ่งแถวใน ma_visits เพราะสัญญาที่ยังไม่เคยเปิดดูรอบ MA จะยังไม่มีแถวให้อ่าน
-// คืนค่า null ถ้าไม่มีรอบที่วันนี้ตกอยู่ (สัญญายังไม่เริ่มหรือหมดอายุแล้ว)
+// คืนค่า null ถ้าไม่มีทั้งรอบค้างและรอบปัจจุบัน (สัญญายังไม่เริ่ม หรือหมดอายุไปแล้วโดยไม่มีรอบค้าง)
 async function getCurrentMaCycle(contract, today) {
   const periodStarts = generateVisitDates(contract.startDate, contract.endDate, contract.maIntervalMonths);
-  let period = null;
-  let sequenceNo = null;
+  if (periodStarts.length === 0) return null;
+
+  const visits = await MaVisit.findAll({ where: { contractId: contract.id } });
+  const visitInRange = (start, end) => visits.find((v) => v.scheduledDate >= start && v.scheduledDate <= end);
+
+  const overdue = [];
+  let current = null;
   for (let i = 0; i < periodStarts.length; i++) {
     const periodStart = periodStarts[i];
     const periodEnd = i + 1 < periodStarts.length ? addDays(periodStarts[i + 1], -1) : contract.endDate;
-    if (periodStart <= today && today <= periodEnd) {
-      period = { periodStart, periodEnd };
-      sequenceNo = i + 1;
-      break;
+    const visit = visitInRange(periodStart, periodEnd);
+    const sequenceNo = visit ? visit.sequenceNo : i + 1;
+    const assigned = !!(visit && visit.workOrderId);
+
+    if (periodEnd < today) {
+      if (!assigned) overdue.push({ sequenceNo, daysOverdue: diffDays(periodEnd, today) });
+    } else if (periodStart <= today) {
+      current = { sequenceNo, daysLeft: diffDays(today, periodEnd), assigned };
     }
   }
-  if (!period) return null;
 
-  const visit = await MaVisit.findOne({
-    where: { contractId: contract.id, scheduledDate: { [Op.between]: [period.periodStart, period.periodEnd] } }
-  });
-  if (visit) sequenceNo = visit.sequenceNo;
-  const assigned = !!(visit && visit.workOrderId);
-
-  return { sequenceNo, daysLeft: diffDays(today, period.periodEnd), assigned };
+  if (overdue.length === 0 && !current) return null;
+  return { overdue, current };
 }
 
 // สร้างตารางเข้า MA ใหม่ให้สัญญา visit ที่มอบหมายช่างแล้วคือ workOrderId มีค่า ถือเป็นงานจริงแล้วจะไม่ถูกลบทิ้ง มีแค่ placeholder ที่ยังไม่มอบหมายเท่านั้นที่ถูกแทนที่
