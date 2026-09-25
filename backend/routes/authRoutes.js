@@ -148,7 +148,9 @@ router.patch('/me', protect, async (req, res) => {
     }
 
     if (fullName !== undefined) user.fullName = fullName;
-    if (email !== undefined) user.email = email;
+    // ค่าว่างต้องแปลงเป็น null ไม่ใช่ '' เพราะ isEmail validator ของ Sequelize เช็คแค่ null/undefined ว่าข้ามได้
+    // ค่าว่างเปล่ายังโดนตรวจแล้วไม่ผ่านเสมอ ทำให้แก้ไขข้อมูลอื่นไม่ได้เลยถ้า email เดิมเป็น null
+    if (email !== undefined) user.email = email || null;
     if (phone !== undefined) user.phone = phone;
     if (province !== undefined) user.province = province;
 
@@ -204,7 +206,8 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
 
     if (fullName !== undefined) user.fullName = fullName;
     if (role !== undefined) user.role = role;
-    if (email !== undefined) user.email = email;
+    // ค่าว่างต้องแปลงเป็น null เหมือนที่ PATCH /me แก้ไว้ กันปัญหาเดียวกันตอนแอดมินแก้ผู้ใช้ที่ยังไม่มี email
+    if (email !== undefined) user.email = email || null;
     if (phone !== undefined) user.phone = phone;
     if (province !== undefined) user.province = province;
     if (active !== undefined) user.active = active;

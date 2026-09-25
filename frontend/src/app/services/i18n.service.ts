@@ -9,6 +9,7 @@ const DICT: Record<Lang, Record<string, string>> = {
   th: {
     brand: 'ระบบจัดการงานช่าง', langShort: 'TH', themeBtn: 'สลับโหมดสว่าง/มืด',
     login: 'เข้าสู่ระบบ', logout: 'ออกจากระบบ', username: 'ชื่อผู้ใช้', password: 'รหัสผ่าน',
+    showPassword: 'แสดงรหัสผ่าน', hidePassword: 'ซ่อนรหัสผ่าน',
     loginLead: 'ตารางงานบริการเครื่องมือแพทย์ รายเดือน รายสัปดาห์ และรายวัน สำหรับทีมช่างและผู้จัดตารางงาน',
     access: 'สิทธิ์การเข้าถึง', accessAll: 'ผู้ดูแลระบบและหัวหน้าช่างเห็นงานของช่างทุกคน',
     accessOwn: 'ช่างเทคนิคเห็นเฉพาะงานที่ได้รับมอบหมายของตัวเอง',
@@ -122,6 +123,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     not_authorized_view_order: 'ไม่มีสิทธิ์ดูงานนี้',
     not_authorized: 'ไม่มีสิทธิ์ดำเนินการนี้',
     not_authorized_reschedule: 'ไม่มีสิทธิ์เลื่อนงานนี้',
+    not_authorized_reschedule_region: 'หัวหน้าช่างภาคใต้เลื่อนได้แค่งานของช่างภาคใต้เท่านั้น',
     not_authorized_cancel: 'ไม่มีสิทธิ์ยกเลิกงานนี้',
     reschedule_fields_required: 'กรุณาระบุวันที่ใหม่และเหตุผล',
     photos_required: 'กรุณาเลือกรูปอย่างน้อย 1 รูป',
@@ -153,6 +155,7 @@ const DICT: Record<Lang, Record<string, string>> = {
   en: {
     brand: 'Technician System', langShort: 'EN', themeBtn: 'Toggle light / dark',
     login: 'Sign in', logout: 'Sign out', username: 'Username', password: 'Password',
+    showPassword: 'Show password', hidePassword: 'Hide password',
     loginLead: 'Monthly, weekly and daily service schedules for medical equipment teams and dispatchers.',
     access: 'Access levels', accessAll: 'Administrator and lead technician see every technician’s jobs',
     accessOwn: 'Technician sees only their own assigned jobs',
@@ -266,6 +269,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     not_authorized_view_order: 'Not authorized to view this order',
     not_authorized: 'Not authorized',
     not_authorized_reschedule: 'Not authorized to reschedule',
+    not_authorized_reschedule_region: 'Southern-region supervisors can only reschedule jobs for southern-region technicians',
     not_authorized_cancel: 'Not authorized to cancel this job',
     reschedule_fields_required: 'New date and reason are required',
     photos_required: 'Please select at least 1 photo',

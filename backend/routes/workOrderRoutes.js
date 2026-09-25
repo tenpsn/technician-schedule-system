@@ -18,10 +18,14 @@ const TECHNICIAN_ATTRS = ['id', 'fullName', 'username'];
 const APPROVER_ATTRS = ['id', 'fullName'];
 
 const DETAIL_INCLUDE = [
-  { model: User, as: 'technician', attributes: [...TECHNICIAN_ATTRS, 'email'] },
+  // region ต้องมีไว้เช็คสิทธิ์เลื่อนงานของหัวหน้าช่างภาคใต้ ดู PATCH /:id/reschedule
+  { model: User, as: 'technician', attributes: [...TECHNICIAN_ATTRS, 'email', 'region'] },
   { model: User, as: 'approvedBy', attributes: APPROVER_ATTRS },
   { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
 ];
+
+// หัวหน้าช่างภาคใต้เท่านั้นที่ถูกจำกัดสิทธิ์นี้ (ไม่รวม admin) ภาคอื่นยังเลื่อนงานของช่างได้ทุกคนเหมือนเดิม
+const RESTRICTED_SUPERVISOR_REGION = 'ใต้';
 
 // สร้างใบงาน ขั้นตอนวางแผน
 router.post('/', protect, async (req, res) => {
@@ -305,6 +309,12 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
     const isSupervisor = isSupervisorRole(req.user.role);
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized_reschedule', message: 'Not authorized to reschedule' });
+    }
+
+    // หัวหน้าช่างภาคใต้ (ไม่รวม admin) เลื่อนได้แค่งานของช่างภาคใต้ด้วยกันเท่านั้น ภาคอื่นไม่ถูกจำกัด
+    if (!isOwner && req.user.role === 'supervisor' && req.user.region === RESTRICTED_SUPERVISOR_REGION
+      && order.technician?.region !== RESTRICTED_SUPERVISOR_REGION) {
+      return res.status(403).json({ code: 'not_authorized_reschedule_region', message: 'Supervisors can only reschedule jobs for technicians in their own region' });
     }
 
     await rescheduleWorkOrder(order, {
