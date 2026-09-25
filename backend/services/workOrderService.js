@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 const WorkOrder = require('../models/WorkOrder');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
@@ -12,9 +12,11 @@ const generateSRNumber = async () => {
   const now = new Date();
   const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
   const prefix = `SR-${yearMonth}-`;
+  // เรียงด้วยค่าตัวเลขจริง ไม่ใช่เรียงตาม string เพราะถ้าเลขท้ายเกิน 4 หลัก (10000 ขึ้นไป)
+  // การเรียงแบบ string จะได้ "9999" มาก่อน "10000" เสมอ ทำให้เลขถัดไปคำนวณผิดค้างที่ 10000 ไม่รู้จบ
   const latest = await WorkOrder.findOne({
     where: { srNumber: { [Op.like]: `${prefix}%` } },
-    order: [['srNumber', 'DESC']],
+    order: [[literal(`CAST(SUBSTRING("srNumber" FROM ${prefix.length + 1}) AS INTEGER)`), 'DESC']],
     attributes: ['srNumber']
   });
   const nextSeq = latest ? parseInt(latest.srNumber.slice(prefix.length), 10) + 1 : 1;

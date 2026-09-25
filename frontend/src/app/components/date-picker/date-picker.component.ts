@@ -64,7 +64,7 @@ function pad(n: number): string {
     .dp-icon { font-size: 13px; flex: none; }
 
     .dp-panel {
-      position: fixed; z-index: 30; width: 300px;
+      position: fixed; z-index: 30; width: min(300px, calc(100vw - 24px));
       background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 12px; box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26);
       animation: modalIn .16s ease both;
@@ -216,10 +216,10 @@ export class DatePickerComponent implements ControlValueAccessor, OnDestroy {
   private positionPanel() {
     const fieldEl = this.elementRef.nativeElement.querySelector('.dp-field') as HTMLElement;
     const rect = fieldEl.getBoundingClientRect();
-    const panelWidth = 300;
+    const edgeGap = 12;
+    const panelWidth = Math.min(300, window.innerWidth - edgeGap * 2);
     const estimatedHeight = 340;
     const margin = 6;
-    const edgeGap = 12;
 
     let left = rect.left;
     left = Math.min(left, window.innerWidth - panelWidth - edgeGap);

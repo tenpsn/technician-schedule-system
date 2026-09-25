@@ -293,7 +293,7 @@ export class WorkOrderFormComponent implements OnInit {
     if (formValue.workType === this.otherWorkType && workTypeOther) {
       // ทำตามรูปแบบเดียวกับ flow อื่นๆ ของ LINE bot คือ workType จะเป็นอื่นๆ เสมอ
       // ส่วนที่ผู้ใช้พิมพ์มาจะถูกเก็บรวมไว้ใน description แทน
-      const note = `ประเภทงาน: ${workTypeOther.trim()}`;
+      const note = `${this.i18n.t['jobType']}: ${workTypeOther.trim()}`;
       description = description ? `${note}\n${description}` : note;
     }
     const payload = { ...formValue, description };

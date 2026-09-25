@@ -204,6 +204,12 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
       return res.status(400).json({ code: 'cannot_deactivate_self', message: 'You cannot deactivate your own account' });
     }
 
+    // ผู้ใช้ที่ถูกปิดใช้งานแล้ว ต้องเปิดใช้งานก่อนถึงจะแก้ไขข้อมูลอื่นได้ ฝั่ง UI ปิดปุ่มแก้ไขไว้อยู่แล้ว
+    // แต่ต้องเช็คซ้ำฝั่ง backend ด้วย กันเรียก API ตรงๆ ข้ามการเช็คของ UI
+    if (user.active === false && active !== true) {
+      return res.status(400).json({ code: 'user_inactive', message: 'Reactivate the user before editing other fields' });
+    }
+
     if (fullName !== undefined) user.fullName = fullName;
     if (role !== undefined) user.role = role;
     // ค่าว่างต้องแปลงเป็น null เหมือนที่ PATCH /me แก้ไว้ กันปัญหาเดียวกันตอนแอดมินแก้ผู้ใช้ที่ยังไม่มี email

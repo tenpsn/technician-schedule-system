@@ -71,23 +71,6 @@ import { Router } from '@angular/router';
 
       <div class="body">
         <aside class="sidebar" *ngIf="auth.isSupervisor && showAll">
-          <button type="button" class="sidebar-head collapsible" *ngIf="overdueOrders.length > 0" (click)="overdueCollapsed = !overdueCollapsed">
-            <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
-            <span class="collapsible-right">
-              <span class="count-badge tone-danger-badge">{{ overdueOrders.length }}</span>
-              <span class="collapse-caret" [class.collapsed]="overdueCollapsed">▾</span>
-            </span>
-          </button>
-          <div class="overdue-list" *ngIf="overdueOrders.length > 0 && !overdueCollapsed">
-            <div *ngFor="let o of overdueOrders" class="queue-item overdue-item" (click)="viewOrder(o._id)">
-              <div class="queue-row">
-                <span class="mono">{{ o.srNumber }}</span>
-                <span class="mono tone-danger">{{ o.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}</span>
-              </div>
-              <div class="queue-customer">{{ o.customerName }}</div>
-            </div>
-          </div>
-
           <button type="button" class="sidebar-head collapsible" (click)="teamCollapsed = !teamCollapsed">
             <span class="mono">{{ i18n.t['team'] }}</span>
             <span class="collapsible-right">
@@ -127,19 +110,37 @@ import { Router } from '@angular/router';
               <div class="queue-sub">{{ i18n.typeLabel(o.workType) }} · {{ o.technician?.fullName }}</div>
               <div class="queue-window mono">{{ timeWindow(o) }}</div>
             </div>
-            <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
+            <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noPendingJobs'] }}</div>
+          </div>
+
+          <button type="button" class="sidebar-head collapsible" (click)="overdueCollapsed = !overdueCollapsed">
+            <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
+            <span class="collapsible-right">
+              <span class="count-badge tone-danger-badge">{{ overdueOrders.length }}</span>
+              <span class="collapse-caret" [class.collapsed]="overdueCollapsed">▾</span>
+            </span>
+          </button>
+          <div class="overdue-list" *ngIf="!overdueCollapsed">
+            <div *ngFor="let o of overdueOrders" class="queue-item overdue-item" (click)="viewOrder(o._id)">
+              <div class="queue-row">
+                <span class="mono">{{ o.srNumber }}</span>
+                <span class="mono tone-danger">{{ o.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}</span>
+              </div>
+              <div class="queue-customer">{{ o.customerName }}</div>
+            </div>
+            <div *ngIf="overdueOrders.length === 0" class="empty-note">{{ i18n.t['noOverdueJobs'] }}</div>
           </div>
         </aside>
 
         <aside class="sidebar" *ngIf="!(auth.isSupervisor && showAll)">
-          <button type="button" class="sidebar-head collapsible" *ngIf="myOverdueOrders.length > 0" (click)="myOverdueCollapsed = !myOverdueCollapsed">
+          <button type="button" class="sidebar-head collapsible" (click)="myOverdueCollapsed = !myOverdueCollapsed">
             <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
             <span class="collapsible-right">
               <span class="count-badge tone-danger-badge">{{ myOverdueOrders.length }}</span>
               <span class="collapse-caret" [class.collapsed]="myOverdueCollapsed">▾</span>
             </span>
           </button>
-          <div class="overdue-list" *ngIf="myOverdueOrders.length > 0 && !myOverdueCollapsed">
+          <div class="overdue-list" *ngIf="!myOverdueCollapsed">
             <div *ngFor="let o of myOverdueOrders" class="queue-item overdue-item" (click)="viewOrder(o._id)">
               <div class="queue-row">
                 <span class="mono">{{ o.srNumber }}</span>
@@ -147,6 +148,7 @@ import { Router } from '@angular/router';
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
             </div>
+            <div *ngIf="myOverdueOrders.length === 0" class="empty-note">{{ i18n.t['noOverdueJobs'] }}</div>
           </div>
 
           <button type="button" class="sidebar-head collapsible" (click)="myPendingCollapsed = !myPendingCollapsed">
@@ -166,7 +168,7 @@ import { Router } from '@angular/router';
               <div class="queue-sub">{{ i18n.typeLabel(o.workType) }}</div>
               <div class="queue-window mono">{{ timeWindow(o) }}</div>
             </div>
-            <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noResults'] }}</div>
+            <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noPendingJobs'] }}</div>
           </div>
         </aside>
 
@@ -397,6 +399,15 @@ import { Router } from '@angular/router';
       .row-break { flex-basis: 100%; height: 0; }
       .spacer { display: none; }
       .add-btn { margin-left: auto; }
+    }
+
+    @media (max-width: 640px) {
+      .month-grid { grid-template-columns: repeat(7, minmax(92px, 1fr)); min-width: 700px; }
+      .day-cell { min-height: 96px; }
+      .week-view { min-width: 760px; }
+      .week-col { min-width: 108px; }
+      .day-scale-wrap { min-width: 1400px; }
+      .tech-col-head, .tech-col { width: 150px; }
     }
   `]
 })
