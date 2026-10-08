@@ -39,7 +39,12 @@ const DICT: Record<Lang, Record<string, string>> = {
     hospitalSettings: 'ตั้งค่ารายชื่อโรงพยาบาล', hospitalAddress: 'ที่อยู่', hospitalNamePh: 'เช่น สูงเนิน',
     hospitalAddressPh: 'เช่น 111 ถ.มิตรภาพ ต.ในเมือง อ.เมือง จ.นครราชสีมา', addHospital: 'เพิ่มโรงพยาบาล', searchList: 'ค้นหาในรายการ...', delete: 'ลบ',
     hospitalFacilityCode: 'รหัสสถานพยาบาล', hospitalFacilityCodePh: 'เช่น 12345',
+    contractCreatedBy: 'ผู้เพิ่ม',
     contractSettings: 'สัญญา', contractNumber: 'เลขที่สัญญา', contractNumberPh: 'เช่น สญ-2569-001',
+    auditHistory: 'ประวัติการแก้ไข', auditColTime: 'เวลา', auditColActor: 'ผู้ทำ', auditColAction: 'การกระทำ',
+    auditColItem: 'รายการ', auditColChanges: 'รายละเอียด', auditActionCreate: 'เพิ่ม', auditActionUpdate: 'แก้ไข',
+    auditActionDelete: 'ลบ', auditTypeAll: 'ทั้งหมด', auditTypeHospital: 'โรงพยาบาล', auditTypeContract: 'สัญญา',
+    auditSearchPh: 'ค้นหาชื่อรายการหรือผู้ทำ...', auditEmpty: 'ยังไม่มีประวัติการแก้ไข',
     contractStart: 'วันที่เริ่ม', contractEnd: 'วันที่สิ้นสุด', contractMaInterval: 'รอบ MA',
     dateRangeError: 'วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่ม',
     contractMaIntervalPh: 'เช่น 3', contractMaIntervalSuffix: 'เดือน/ครั้ง',
@@ -98,6 +103,21 @@ const DICT: Record<Lang, Record<string, string>> = {
     changePassword: 'เปลี่ยนรหัสผ่าน', currentPassword: 'รหัสผ่านปัจจุบัน', newPassword: 'รหัสผ่านใหม่',
     newPasswordPh: 'เว้นว่างไว้หากไม่ต้องการเปลี่ยนรหัสผ่าน', toastProfileUpdated: 'บันทึกข้อมูลส่วนตัวแล้ว',
     notifications: 'การแจ้งเตือน', markAllRead: 'อ่านทั้งหมด', noNotifications: 'ไม่มีการแจ้งเตือน',
+    // ข้อความแจ้งเตือนตาม code จาก backend ดูฟังก์ชัน notificationTitle ใน I18nService
+    notif_plan_submitted_title: '📋 รออนุมัติแผนงาน',
+    notif_plan_submitted_message: 'ช่าง {technician} เสนอแผนงาน {srNumber} - {customer}',
+    notif_plan_approved_title: '✅ แผนงานได้รับการอนุมัติ',
+    notif_plan_approved_message: 'งาน {srNumber} ({customer}) ได้รับการอนุมัติแล้ว',
+    notif_job_rescheduled_title: '🔄 งานถูกเลื่อน',
+    notif_job_rescheduled_message: 'งาน {srNumber} เลื่อนจาก {fromDate} เป็น {toDate}\nเหตุผล: {reason}',
+    notif_cancelled_by_supervisor_title: '🚫 งานถูกยกเลิกโดยหัวหน้า',
+    notif_cancelled_by_supervisor_message: 'งาน {srNumber} ({customer}) ถูกยกเลิก\nเหตุผล: {reason}',
+    notif_cancelled_by_technician_title: '🚫 ช่างขอยกเลิกงาน',
+    notif_cancelled_by_technician_message: '{technician} ยกเลิกงาน {srNumber} ({customer})\nเหตุผล: {reason}',
+    notif_overdue_own_title: '⚠️ งานค้างเกินกำหนด',
+    notif_overdue_own_message: 'งาน {srNumber} ({customer}) ค้าง {days} วัน กรุณาอัปเดตสถานะหรือเลื่อนงาน',
+    notif_overdue_team_title: '⚠️ แจ้งเตือนงานค้าง',
+    notif_overdue_team_message: 'งาน {srNumber} ของ {technician} ค้าง {days} วัน',
     dashboardTitle: 'แดชบอร์ดช่าง', colAssigned: 'งานที่ได้รับ', colCancelRate: 'อัตรายกเลิก',
     colRescheduled: 'เลื่อนงาน', colHoursWorked: 'ชั่วโมงที่ทำ', colDaysWorked: 'วันที่ทำงาน',
     selectTechHint: 'คลิกชื่อช่างเพื่อดูรายละเอียด', jobTypeBreakdown: 'สัดส่วนประเภทงาน',
@@ -119,13 +139,22 @@ const DICT: Record<Lang, Record<string, string>> = {
     username_exists: 'มีชื่อผู้ใช้นี้อยู่แล้ว',
     missing_login_fields: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน',
     user_not_found: 'ไม่พบผู้ใช้งานนี้',
+    role_not_allowed: 'บัญชีของคุณไม่มีสิทธิ์ใช้งานส่วนนี้',
+    session_user_not_found: 'ไม่พบบัญชีผู้ใช้ กรุณาเข้าสู่ระบบใหม่',
+    account_deactivated: 'บัญชีนี้ถูกปิดใช้งาน',
+    token_expired: 'หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่',
+    invalid_token: 'การเข้าสู่ระบบไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่',
+    no_token: 'กรุณาเข้าสู่ระบบก่อน',
+    photo_too_large: 'ไฟล์รูปใหญ่เกินไป (ไม่เกิน {maxMb} MB ต่อรูป)',
+    too_many_photos: 'อัปโหลดได้ครั้งละไม่เกิน {maxFiles} รูป',
+    photo_type_invalid: 'รองรับเฉพาะไฟล์รูปภาพ jpg, png และ webp',
     cannot_deactivate_self: 'ไม่สามารถระงับการใช้งานบัญชีของตัวเองได้',
     user_inactive: 'กรุณาเปิดใช้งานผู้ใช้นี้ก่อนแก้ไขข้อมูลอื่น',
     work_order_not_found: 'ไม่พบงานนี้',
     not_authorized_view_order: 'ไม่มีสิทธิ์ดูงานนี้',
     not_authorized: 'ไม่มีสิทธิ์ดำเนินการนี้',
     not_authorized_reschedule: 'ไม่มีสิทธิ์เลื่อนงานนี้',
-    not_authorized_reschedule_region: 'หัวหน้าช่างภาคใต้เลื่อนได้แค่งานของช่างภาคใต้เท่านั้น',
+    not_authorized_region: 'หัวหน้าช่างภาคใต้จัดการได้แค่งานของช่างภาคใต้เท่านั้น',
     not_authorized_cancel: 'ไม่มีสิทธิ์ยกเลิกงานนี้',
     reschedule_fields_required: 'กรุณาระบุวันที่ใหม่และเหตุผล',
     photos_required: 'กรุณาเลือกรูปอย่างน้อย 1 รูป',
@@ -187,7 +216,12 @@ const DICT: Record<Lang, Record<string, string>> = {
     hospitalSettings: 'Hospital list settings', hospitalAddress: 'Address', hospitalNamePh: 'e.g. Sung Noen',
     hospitalAddressPh: 'e.g. 111 Mittraphap Rd, Nai Mueang, Mueang, Nakhon Ratchasima', addHospital: 'Add hospital', searchList: 'Search list...', delete: 'Delete',
     hospitalFacilityCode: 'Facility code', hospitalFacilityCodePh: 'e.g. 12345',
+    contractCreatedBy: 'Added by',
     contractSettings: 'Contract', contractNumber: 'Contract number', contractNumberPh: 'e.g. CT-2026-001',
+    auditHistory: 'Change history', auditColTime: 'Time', auditColActor: 'By', auditColAction: 'Action',
+    auditColItem: 'Item', auditColChanges: 'Details', auditActionCreate: 'Added', auditActionUpdate: 'Edited',
+    auditActionDelete: 'Deleted', auditTypeAll: 'All', auditTypeHospital: 'Hospital', auditTypeContract: 'Contract',
+    auditSearchPh: 'Search item or person...', auditEmpty: 'No changes recorded yet',
     contractStart: 'Start date', contractEnd: 'End date', contractMaInterval: 'MA interval',
     dateRangeError: 'End date must be after start date',
     contractMaIntervalPh: 'e.g. 3', contractMaIntervalSuffix: 'months/visit',
@@ -246,6 +280,20 @@ const DICT: Record<Lang, Record<string, string>> = {
     changePassword: 'Change password', currentPassword: 'Current password', newPassword: 'New password',
     newPasswordPh: 'Leave blank to keep your current password', toastProfileUpdated: 'Profile updated',
     notifications: 'Notifications', markAllRead: 'Mark all read', noNotifications: 'No notifications',
+    notif_plan_submitted_title: '📋 Plan awaiting approval',
+    notif_plan_submitted_message: '{technician} submitted plan {srNumber} - {customer}',
+    notif_plan_approved_title: '✅ Plan approved',
+    notif_plan_approved_message: 'Job {srNumber} ({customer}) has been approved',
+    notif_job_rescheduled_title: '🔄 Job rescheduled',
+    notif_job_rescheduled_message: 'Job {srNumber} moved from {fromDate} to {toDate}\nReason: {reason}',
+    notif_cancelled_by_supervisor_title: '🚫 Job cancelled by supervisor',
+    notif_cancelled_by_supervisor_message: 'Job {srNumber} ({customer}) was cancelled\nReason: {reason}',
+    notif_cancelled_by_technician_title: '🚫 Technician cancelled a job',
+    notif_cancelled_by_technician_message: '{technician} cancelled job {srNumber} ({customer})\nReason: {reason}',
+    notif_overdue_own_title: '⚠️ Job overdue',
+    notif_overdue_own_message: 'Job {srNumber} ({customer}) is {days} day(s) overdue. Please update its status or reschedule',
+    notif_overdue_team_title: '⚠️ Overdue job alert',
+    notif_overdue_team_message: 'Job {srNumber} of {technician} is {days} day(s) overdue',
     dashboardTitle: 'Technician dashboard', colAssigned: 'Assigned', colCancelRate: 'Cancel rate',
     colRescheduled: 'Rescheduled', colHoursWorked: 'Hours worked', colDaysWorked: 'Days worked',
     selectTechHint: 'Click a technician to see detail', jobTypeBreakdown: 'Job type breakdown',
@@ -267,13 +315,22 @@ const DICT: Record<Lang, Record<string, string>> = {
     username_exists: 'Username already exists',
     missing_login_fields: 'Please provide username and password',
     user_not_found: 'User not found',
+    role_not_allowed: 'Your account is not allowed to use this section',
+    session_user_not_found: 'Account not found, please sign in again',
+    account_deactivated: 'This account is deactivated',
+    token_expired: 'Your session has expired, please sign in again',
+    invalid_token: 'Invalid sign-in, please sign in again',
+    no_token: 'Please sign in first',
+    photo_too_large: 'Photo is too large (max {maxMb} MB per photo)',
+    too_many_photos: 'You can upload at most {maxFiles} photos at a time',
+    photo_type_invalid: 'Only jpg, png and webp images are supported',
     cannot_deactivate_self: 'You cannot deactivate your own account',
     user_inactive: 'Reactivate this user before editing other fields',
     work_order_not_found: 'Work order not found',
     not_authorized_view_order: 'Not authorized to view this order',
     not_authorized: 'Not authorized',
     not_authorized_reschedule: 'Not authorized to reschedule',
-    not_authorized_reschedule_region: 'Southern-region supervisors can only reschedule jobs for southern-region technicians',
+    not_authorized_region: 'Southern-region supervisors can only manage jobs of southern-region technicians',
     not_authorized_cancel: 'Not authorized to cancel this job',
     reschedule_fields_required: 'New date and reason are required',
     photos_required: 'Please select at least 1 photo',
@@ -367,16 +424,41 @@ export class I18nService {
   errorMessage(err: any, fallback?: string): string {
     const code = err?.error?.code;
     if (code && this.t[code]) {
-      let msg = this.t[code];
-      const data = err?.error?.data;
-      if (data && typeof data === 'object') {
-        for (const [key, value] of Object.entries(data)) {
-          const display = key === 'status' ? this.statusLabel(String(value)) : String(value);
-          msg = msg.split(`{${key}}`).join(display);
-        }
-      }
-      return msg;
+      return this.fill(this.t[code], err?.error?.data);
     }
     return err?.error?.message || fallback || this.t['genericError'];
+  }
+
+  // แจ้งเตือนใหม่มี code ให้ประกอบข้อความตามภาษาที่เลือก
+  // แจ้งเตือนเก่าที่ไม่มี code ใช้ข้อความภาษาไทยที่ server เก็บไว้ตามเดิม
+  notificationTitle(n: { code?: string | null; data?: any; title: string }): string {
+    const template = n.code && this.t[`notif_${n.code}_title`];
+    return template ? this.fill(template, n.data) : n.title;
+  }
+
+  notificationMessage(n: { code?: string | null; data?: any; message: string }): string {
+    const template = n.code && this.t[`notif_${n.code}_message`];
+    return template ? this.fill(template, n.data) : n.message;
+  }
+
+  // แทน {key} ด้วยค่าใน data สถานะแปลเป็นคำตามภาษา ส่วนช่องที่ชื่อลงท้ายด้วย Date แสดงปีตามภาษา
+  private fill(template: string, data: any): string {
+    if (!data || typeof data !== 'object') return template;
+    let msg = template;
+    for (const [key, value] of Object.entries(data)) {
+      let display = String(value);
+      if (key === 'status') display = this.statusLabel(display);
+      else if (key.endsWith('Date')) display = this.formatDateOnly(display);
+      msg = msg.split(`{${key}}`).join(display);
+    }
+    return msg;
+  }
+
+  // วันที่ YYYY-MM-DD แสดงเป็น วว/ดด/ปปปป และบวก 543 เป็น พ.ศ. ตอนภาษาไทย ให้ตรงกับ localDate pipe
+  formatDateOnly(value: string): string {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!m) return value;
+    const year = this.lang === 'th' ? Number(m[1]) + 543 : Number(m[1]);
+    return `${m[3]}/${m[2]}/${year}`;
   }
 }

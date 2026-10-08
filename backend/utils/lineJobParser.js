@@ -38,7 +38,11 @@ const parseThaiDate = (str) => {
 const parseTimeRange = (str) => {
   const m = str.trim().match(/^([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)$/);
   if (!m) return null;
-  return { start: `${m[1]}:${m[2]}`, end: `${m[3]}:${m[4]}` };
+  const start = `${m[1]}:${m[2]}`;
+  const end = `${m[3]}:${m[4]}`;
+  // เวลาจบต้องหลังเวลาเริ่ม เหมือน timeRangeValidator ในฟอร์มเว็บ
+  if (end <= start) return null;
+  return { start, end };
 };
 
 // ตัวอย่างข้อความที่ฟังก์ชันนี้แปลงได้ เช่น เพิ่มงาน ตามด้วยลูกค้า สถานที่ ประเภทงาน วันที่ เวลา รายละเอียด
@@ -62,27 +66,24 @@ const parseAddJobMessage = (text) => {
   if (!fields.customerName) missing.push(FIELD_LABELS.customerName);
   if (!fields.workType) missing.push(FIELD_LABELS.workType);
   if (!fields.plannedDateRaw) missing.push(FIELD_LABELS.plannedDateRaw);
+  // เวลาบังคับกรอกเหมือนฟอร์มเว็บและแบบถามทีละขั้น
+  if (!fields.plannedTimeRaw) missing.push(FIELD_LABELS.plannedTimeRaw);
   if (missing.length > 0) return { ok: false, missing };
 
   const plannedDate = parseThaiDate(fields.plannedDateRaw);
   if (!plannedDate) return { ok: false, invalidDate: true };
 
-  let plannedStartTime;
-  let plannedEndTime;
-  if (fields.plannedTimeRaw) {
-    const range = parseTimeRange(fields.plannedTimeRaw);
-    if (!range) return { ok: false, invalidTime: true };
-    plannedStartTime = range.start;
-    plannedEndTime = range.end;
-  }
+  const range = parseTimeRange(fields.plannedTimeRaw);
+  if (!range) return { ok: false, invalidTime: true };
+  const plannedStartTime = range.start;
+  const plannedEndTime = range.end;
 
   return {
     ok: true,
     data: {
       customerName: fields.customerName,
       customerLocation: fields.customerLocation,
-      // เก็บค่าตามที่พิมพ์เลย เหมือนช่องอื่นๆ แบบพิมพ์อิสระในฟอร์มเว็บ ไม่เทียบกับ MA ติดตั้ง ซ่อม
-      // ถ้าพิมพ์ผิดก็จะถูกเก็บตามที่พิมพ์ผิดนั้นเลย
+      // ส่งค่าที่พิมพ์ออกไปตรงๆ ผู้เรียกจะเทียบกับรายการประเภทงานเอง ดู handleAddJob ใน lineRoutes.js
       workType: fields.workType,
       description: fields.description,
       plannedDate,

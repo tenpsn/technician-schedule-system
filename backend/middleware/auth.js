@@ -12,23 +12,23 @@ const protect = async (req, res, next) => {
       req.user = await User.findByPk(decoded.id);
       
       if (!req.user) {
-        return res.status(401).json({ message: 'User not found' });
+        return res.status(401).json({ code: 'session_user_not_found', message: 'User not found' });
       }
       
       if (!req.user.active) {
-        return res.status(401).json({ message: 'User account is deactivated' });
+        return res.status(401).json({ code: 'account_deactivated', message: 'User account is deactivated' });
       }
       
       next();
     } catch (error) {
       logger.error(`Auth error: ${error.message}`);
       if (error.name === 'TokenExpiredError') {
-        return res.status(401).json({ message: 'Token expired. Please login again.' });
+        return res.status(401).json({ code: 'token_expired', message: 'Token expired. Please login again.' });
       }
-      return res.status(401).json({ message: 'Not authorized, invalid token' });
+      return res.status(401).json({ code: 'invalid_token', message: 'Not authorized, invalid token' });
     }
   } else {
-    return res.status(401).json({ message: 'No token provided' });
+    return res.status(401).json({ code: 'no_token', message: 'No token provided' });
   }
 };
 
@@ -36,8 +36,10 @@ const authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       logger.warn(`Authorization failed: ${req.user.username} tried to access ${req.path}`);
-      return res.status(403).json({ 
-        message: `Role ${req.user.role} is not allowed to access this resource` 
+      // ส่ง code ไปด้วยให้หน้าเว็บแปลเป็นภาษาที่ผู้ใช้เลือก ดู errorMessage ใน i18n.service.ts
+      return res.status(403).json({
+        code: 'role_not_allowed',
+        message: `Role ${req.user.role} is not allowed to access this resource`
       });
     }
     next();

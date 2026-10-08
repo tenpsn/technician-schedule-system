@@ -26,6 +26,14 @@ const Notification = sequelize.define('Notification', {
     type: DataTypes.TEXT,
     allowNull: false
   },
+  // ให้หน้าเว็บประกอบข้อความตามภาษาที่ผู้ใช้เลือก ดู notificationText ใน i18n.service.ts
+  // ส่วน title กับ message ภาษาไทยเก็บไว้เป็นค่าสำรองของแจ้งเตือนเก่าที่ยังไม่มี code
+  code: {
+    type: DataTypes.STRING
+  },
+  data: {
+    type: DataTypes.JSONB
+  },
   relatedWorkOrderId: {
     type: DataTypes.UUID,
     references: { model: WorkOrder, key: 'id' }

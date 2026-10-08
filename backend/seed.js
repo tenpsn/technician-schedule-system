@@ -37,6 +37,16 @@ const seed = async () => {
         phone: '082-345-6789'
       },
       {
+        // หัวหน้าช่างภาคใต้ ใช้ทดสอบสิทธิ์ที่เห็นและจัดการได้แค่งานภาคใต้
+        username: 'sup_south',
+        password: hashedPassword,
+        fullName: 'หัวหน้าช่างภาคใต้ (ทดสอบ)',
+        role: 'supervisor',
+        province: 'สงขลา',
+        email: 'sup.south@gd4.com',
+        phone: '089-012-3456'
+      },
+      {
         username: 'somchai',
         password: hashedPassword,
         fullName: 'สมชาย ใจดี',
@@ -97,7 +107,7 @@ const seed = async () => {
     const workOrders = await WorkOrder.bulkCreate([
       {
         srNumber: 'SR-202609-0001',
-        technicianId: users[2].id, // สมชาย
+        technicianId: users[3].id, // สมชาย
         customerName: 'รพ.สูงเนิน',
         customerLocation: 'สูงเนิน โคราช',
         workType: 'ติดตั้ง',
@@ -109,7 +119,7 @@ const seed = async () => {
       },
       {
         srNumber: 'SR-202609-0002',
-        technicianId: users[4].id, // บุญสูง
+        technicianId: users[5].id, // บุญสูง
         customerName: 'รพ.โนนสูง',
         customerLocation: 'โนนสูง โคราช',
         workType: 'MA',

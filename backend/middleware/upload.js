@@ -13,7 +13,9 @@ const JPEG_QUALITY = 75;
 
 const fileFilter = (req, file, cb) => {
   if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    return cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (jpg, png, webp)'));
+    const error = new Error('Only jpg, png and webp images are allowed');
+    error.code = 'PHOTO_TYPE_INVALID';
+    return cb(error);
   }
   cb(null, true);
 };
@@ -30,7 +32,10 @@ const photosUpload = multer({
 const uploadPhotos = (req, res, next) => {
   photosUpload(req, res, (err) => {
     if (err) {
-      return res.status(400).json({ message: err.message });
+      // แปลง error ของ multer เป็น code ให้หน้าเว็บแปลตามภาษาที่ผู้ใช้เลือก
+      const code = { LIMIT_FILE_SIZE: 'photo_too_large', LIMIT_FILE_COUNT: 'too_many_photos', LIMIT_UNEXPECTED_FILE: 'too_many_photos',
+        PHOTO_TYPE_INVALID: 'photo_type_invalid' }[err.code] || 'photo_invalid';
+      return res.status(400).json({ code, data: { maxMb: MAX_FILE_SIZE_BYTES / 1024 / 1024, maxFiles: MAX_FILES_PER_UPLOAD }, message: err.message });
     }
     next();
   });

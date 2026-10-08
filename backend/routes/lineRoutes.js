@@ -11,7 +11,7 @@ const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = r
 const lineSession = require('../utils/lineSession');
 const loginAttempts = require('../utils/loginAttempts');
 const { formatThaiDate } = require('../utils/dateFormat');
-const { isSupervisorRole } = require('../config/roles');
+const { isSupervisorRole, isBlockedByRegion } = require('../config/roles');
 const { WORK_TYPES, OTHER_TYPE, isRepairType, isInstallationType } = require('../config/workTypes');
 const logger = require('../config/logger');
 
@@ -52,7 +52,32 @@ const ABORT_KEYWORDS = ['หยุด'];
 const SKIP_KEYWORDS = ['ข้าม', 'ไม่มี', 'ไม่ระบุ', '-', 'skip'];
 const isSkip = (value) => SKIP_KEYWORDS.includes(value.toLowerCase());
 
-const RESCHEDULABLE_STATUSES = ['approved', 'pending_approval'];
+// สถานะที่ทำแต่ละอย่างได้ ต้องตรงกับ canReschedule และ canUpdateActual ใน work-order-detail.component.ts
+const RESCHEDULABLE_STATUSES = ['approved', 'pending_approval', 'overdue'];
+const ACTUAL_LOGGABLE_STATUSES = ['approved', 'overdue'];
+
+const STATUS_LABEL_TH = {
+  draft: 'ร่าง', pending_approval: 'รออนุมัติ', approved: 'อนุมัติแล้ว', in_progress: 'กำลังดำเนินการ',
+  completed: 'เสร็จสิ้น', overdue: 'ค้างเกินกำหนด', cancelled: 'ยกเลิกแล้ว'
+};
+const statusLabel = (status) => STATUS_LABEL_TH[status] || status;
+
+const REGION_DENIED_TEXT = 'หัวหน้าช่างภาคใต้จัดการได้แค่งานของช่างภาคใต้เท่านั้น';
+
+// แปล error code จาก workOrderService เป็นภาษาไทย ให้ตรงกับที่หน้าเว็บแสดง ดู i18n.service.ts
+const SERVICE_ERROR_TH = {
+  not_pending_approval: 'งานนี้ไม่ได้อยู่ในสถานะรออนุมัติแล้ว',
+  cannot_cancel_status: 'งานนี้ยกเลิกไม่ได้ในสถานะปัจจุบัน',
+  actual_description_required: 'กรุณาระบุรายละเอียดงานที่ทำได้จริง',
+  repair_status_required: 'กรุณาเลือกสถานะการซ่อม',
+  repair_incomplete_reason_required: 'กรุณาระบุสาเหตุที่ยังซ่อมไม่เสร็จ'
+};
+
+const serviceErrorText = (error) => {
+  if (SERVICE_ERROR_TH[error.code]) return SERVICE_ERROR_TH[error.code];
+  logger.error(`LINE action error: ${error.message}`);
+  return 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
+};
 
 const RESCHEDULE_PROMPTS = {
   srNumber: 'พิมพ์เลขที่งานที่ต้องการเลื่อน เช่น SR-202609-0034',
@@ -252,7 +277,7 @@ const finishAddJob = async (technician, data, replyToken) => {
   try {
     workOrder = await createWorkOrder({ technician, ...data });
   } catch (error) {
-    return replyText(replyToken, error.message);
+    return replyText(replyToken, serviceErrorText(error));
   }
   return replyText(replyToken,
     `เพิ่มงานสำเร็จ ✅\nเลขที่: ${workOrder.srNumber}\nลูกค้า: ${workOrder.customerName}\n` +
@@ -270,7 +295,22 @@ const handleAddJob = async (text, technician, replyToken) => {
     if (result.invalidDate) {
       return replyText(replyToken, 'รูปแบบวันที่ไม่ถูกต้อง ใช้ วว/ดด/ปปปป เช่น 20/09/2026');
     }
-    return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง ใช้ HH:MM-HH:MM เช่น 09:00-12:00');
+    return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง ใช้ HH:MM-HH:MM เช่น 09:00-12:00 โดยเวลาจบต้องหลังเวลาเริ่ม');
+  }
+
+  // ประเภทงานต้องเป็นตัวเลือกเดียวกับฟอร์มเว็บ ถ้าพิมพ์อย่างอื่นมาให้นับเป็นอื่นๆ แล้วจดประเภทที่พิมพ์ไว้ในรายละเอียด
+  // เหมือนช่องอื่นๆ โปรดระบุ ในเว็บและแบบถามทีละขั้น
+  const typed = result.data.workType;
+  const matchedType = WORK_TYPES.find((opt) => opt.toLowerCase() === typed.toLowerCase());
+  if (matchedType === OTHER_TYPE) {
+    return replyText(replyToken, `ประเภทงาน "${OTHER_TYPE}" กรุณาระบุประเภทงานที่ต้องการแทน เช่น ประเภทงาน: ตรวจเช็คระบบ`);
+  }
+  if (matchedType) {
+    result.data.workType = matchedType;
+  } else {
+    result.data.workType = OTHER_TYPE;
+    const note = `ประเภทงาน: ${typed}`;
+    result.data.description = result.data.description ? `${note}\n${result.data.description}` : note;
   }
 
   if (!result.data.customerLocation) {
@@ -358,7 +398,7 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
     // ฟิลด์นี้บังคับกรอก ไม่รับข้ามหรือไม่มี เหมือนฟิลด์อื่นที่เป็นตัวเลือก
     const range = parseTimeRange(value);
     if (!range) {
-      return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง กรุณาระบุเวลา (HH:MM-HH:MM) เช่น 09:00-12:00');
+      return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง กรุณาระบุเวลา (HH:MM-HH:MM) เช่น 09:00-12:00 โดยเวลาจบต้องหลังเวลาเริ่ม');
     }
     data.plannedStartTime = range.start;
     data.plannedEndTime = range.end;
@@ -375,6 +415,17 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
 // แสดงหลังเจองานจาก SR number ให้ช่างเช็คว่าใช่งานที่ต้องการก่อนทำขั้นต่อไป
 const orderSummaryLines = (order) =>
   `เลขที่: ${order.srNumber}\nลูกค้า: ${order.customerName}\nสถานที่: ${order.customerLocation}`;
+
+// หาใบงานจากเลขที่แล้วเช็คสิทธิ์แบบเดียวกับหน้าเว็บ รวมถึงข้อจำกัดหัวหน้าช่างภาคใต้
+const findOrderForAction = async (srNumber, user, { verb }) => {
+  const order = await WorkOrder.findOne({ where: { srNumber }, include: [{ model: User, as: 'technician' }] });
+  if (!order) return { notFound: true };
+  const isOwner = order.technicianId === user.id;
+  const isSupervisor = isSupervisorRole(user.role);
+  if (!isOwner && !isSupervisor) return { denied: `คุณไม่มีสิทธิ${verb}งานนี้` };
+  if (isBlockedByRegion(user, order)) return { denied: REGION_DENIED_TEXT };
+  return { order, isOwner, isSupervisor };
+};
 
 const startRescheduleSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'reschedule', step: 'srNumber', data: {} });
@@ -393,19 +444,18 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
   const { step, data } = session;
 
   if (step === 'srNumber') {
-    const order = await WorkOrder.findOne({ where: { srNumber: value } });
-    if (!order) {
+    const found = await findOrderForAction(value, technician, { verb: 'เลื่อน' });
+    if (found.notFound) {
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
-    const isOwner = order.technicianId === technician.id;
-    const isSupervisor = isSupervisorRole(technician.role);
-    if (!isOwner && !isSupervisor) {
+    if (found.denied) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, 'คุณไม่มีสิทธิเลื่อนงานนี้');
+      return replyText(replyToken, found.denied);
     }
+    const { order } = found;
     if (!RESCHEDULABLE_STATUSES.includes(order.status)) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, `งาน ${value} มีสถานะ "${order.status}" ไม่สามารถเลื่อนได้`);
+      return replyText(replyToken, `งาน ${value} มีสถานะ "${statusLabel(order.status)}" ไม่สามารถเลื่อนได้`);
     }
     data.orderId = order.id;
     lineSession.set(lineUserId, { flow: 'reschedule', step: 'newDate', data });
@@ -434,7 +484,7 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
       newDate: data.newDate, reason: value, changedById: technician.id, changedByName: technician.fullName, actorLabel: technician.username
     });
   } catch (error) {
-    return replyText(replyToken, error.message);
+    return replyText(replyToken, serviceErrorText(error));
   }
   return replyText(replyToken,
     `เลื่อนงาน ${order.srNumber} สำเร็จ ✅\nวันที่ใหม่: ${formatThaiDate(data.newDate)}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
@@ -457,19 +507,18 @@ const handleCancelJobStep = async (text, technician, lineUserId, replyToken, ses
   const { step, data } = session;
 
   if (step === 'srNumber') {
-    const order = await WorkOrder.findOne({ where: { srNumber: value }, include: [{ model: User, as: 'technician' }] });
-    if (!order) {
+    const found = await findOrderForAction(value, technician, { verb: 'ยกเลิก' });
+    if (found.notFound) {
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
-    const isOwner = order.technicianId === technician.id;
-    const isSupervisor = isSupervisorRole(technician.role);
-    if (!isOwner && !isSupervisor) {
+    if (found.denied) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, 'คุณไม่มีสิทธิยกเลิกงานนี้');
+      return replyText(replyToken, found.denied);
     }
+    const { order, isOwner, isSupervisor } = found;
     if (!CANCELLABLE_STATUSES.includes(order.status)) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, `งาน ${value} มีสถานะ "${order.status}" ไม่สามารถยกเลิกได้`);
+      return replyText(replyToken, `งาน ${value} มีสถานะ "${statusLabel(order.status)}" ไม่สามารถยกเลิกได้`);
     }
     data.orderId = order.id;
     data.isOwner = isOwner;
@@ -490,7 +539,7 @@ const handleCancelJobStep = async (text, technician, lineUserId, replyToken, ses
       isOwnerCancelling: data.isOwner, isSupervisorCancelling: data.isSupervisor, actorLabel: technician.username
     });
   } catch (error) {
-    return replyText(replyToken, error.message);
+    return replyText(replyToken, serviceErrorText(error));
   }
   return replyText(replyToken, `ยกเลิกงาน ${order.srNumber} สำเร็จ ✅`);
 };
@@ -519,10 +568,11 @@ const finishActualWork = async (lineUserId, technician, data, replyToken) => {
       repairIncompleteReason: data.repairIncompleteReason,
       installationDelivered: data.installationDelivered,
       recordedById: technician.id,
+      recordedByName: technician.fullName,
       actorLabel: technician.username
     });
   } catch (error) {
-    return replyText(replyToken, error.message);
+    return replyText(replyToken, serviceErrorText(error));
   }
 
   const statusLabel = order.status === 'completed' ? 'เสร็จสิ้น ✅' : 'อนุมัติแล้ว (ยังไม่เสร็จ)';
@@ -540,23 +590,25 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
   const { step, data } = session;
 
   if (step === 'srNumber') {
-    const order = await WorkOrder.findOne({ where: { srNumber: value } });
-    if (!order) {
+    const found = await findOrderForAction(value, technician, { verb: 'บันทึก' });
+    if (found.notFound) {
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
-    const isOwner = order.technicianId === technician.id;
-    const isSupervisor = isSupervisorRole(technician.role);
-    if (!isOwner && !isSupervisor) {
+    if (found.denied) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, 'คุณไม่มีสิทธิบันทึกงานนี้');
+      return replyText(replyToken, found.denied);
     }
-    if (order.status !== 'approved') {
+    const { order } = found;
+    if (!ACTUAL_LOGGABLE_STATUSES.includes(order.status)) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, `งาน ${value} มีสถานะ "${order.status}" ไม่สามารถบันทึกงานจริงได้ (ต้องเป็นสถานะ "อนุมัติแล้ว")`);
+      return replyText(replyToken,
+        `งาน ${value} มีสถานะ "${statusLabel(order.status)}" ไม่สามารถบันทึกงานจริงได้ (ต้องเป็น "อนุมัติแล้ว" หรือ "ค้างเกินกำหนด")`);
     }
     data.orderId = order.id;
     data.workType = order.workType;
     data.customerLocation = order.customerLocation;
+    data.plannedStartTime = order.plannedStartTime;
+    data.plannedEndTime = order.plannedEndTime;
     lineSession.set(lineUserId, { flow: 'actual', step: 'actualDate', data });
     return replyText(replyToken, `${orderSummaryLines(order)}\n\n${ACTUAL_PROMPTS.actualDate}`);
   }
@@ -568,16 +620,26 @@ const handleActualStep = async (text, technician, lineUserId, replyToken, sessio
     }
     data.actualDate = date;
     lineSession.set(lineUserId, { flow: 'actual', step: 'actualTime', data });
-    return replyText(replyToken, ACTUAL_PROMPTS.actualTime);
+    // หน้าเว็บเติมเวลาตามแผนไว้ให้ก่อนและไม่บังคับกรอก ที่นี่เลยให้พิมพ์ข้ามเพื่อใช้เวลาตามแผนได้
+    const plannedTime = data.plannedStartTime && data.plannedEndTime
+      ? `${data.plannedStartTime}-${data.plannedEndTime}` : null;
+    return replyText(replyToken, plannedTime
+      ? `${ACTUAL_PROMPTS.actualTime}\nเวลาตามแผน: ${plannedTime}\n(พิมพ์ ข้าม เพื่อใช้เวลาตามแผน)`
+      : `${ACTUAL_PROMPTS.actualTime}\n(พิมพ์ ข้าม ถ้าไม่ระบุเวลา)`);
   }
 
   if (step === 'actualTime') {
-    const range = parseTimeRange(value);
-    if (!range) {
-      return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง กรุณาระบุ (HH:MM-HH:MM) เช่น 09:00-12:00');
+    if (isSkip(value)) {
+      data.actualStartTime = data.plannedStartTime || '';
+      data.actualEndTime = data.plannedEndTime || '';
+    } else {
+      const range = parseTimeRange(value);
+      if (!range) {
+        return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง กรุณาระบุ (HH:MM-HH:MM) เช่น 09:00-12:00 โดยเวลาจบต้องหลังเวลาเริ่ม');
+      }
+      data.actualStartTime = range.start;
+      data.actualEndTime = range.end;
     }
-    data.actualStartTime = range.start;
-    data.actualEndTime = range.end;
     lineSession.set(lineUserId, { flow: 'actual', step: 'actualLocation', data });
 
     // โชว์สถานที่เดิมที่มีอยู่แล้ว ให้ช่างพิมพ์ข้ามเพื่อยืนยันได้เลยโดยไม่ต้องพิมพ์ใหม่
@@ -645,17 +707,26 @@ const handleApprove = async (text, approver, replyToken) => {
   const noteMatch = text.match(/หมายเหตุ\s*:\s*(.+)/);
   const approvalNote = noteMatch ? noteMatch[1].trim() : undefined;
 
-  const order = await WorkOrder.findOne({ where: { srNumber } });
-  if (!order) {
+  const found = await findOrderForAction(srNumber, approver, { verb: 'อนุมัติ' });
+  if (found.notFound) {
     return replyText(replyToken, `ไม่พบงานเลขที่ ${srNumber}`);
   }
+  if (found.denied) {
+    return replyText(replyToken, found.denied);
+  }
+  const { order } = found;
   if (order.status !== 'pending_approval') {
-    return replyText(replyToken, `งาน ${srNumber} ไม่ได้อยู่ในสถานะรออนุมัติ (สถานะปัจจุบัน: ${order.status})`);
+    return replyText(replyToken, `งาน ${srNumber} ไม่ได้อยู่ในสถานะรออนุมัติ (สถานะปัจจุบัน: ${statusLabel(order.status)})`);
   }
 
-  await approveWorkOrder(order, {
-    approvedById: approver.id, approvedByName: approver.fullName, approvalNote, actorLabel: `${approver.username} (LINE)`
-  });
+  // กันกรณีมีคนกดอนุมัติจากเว็บไปก่อนพร้อมกัน service จะโยน error ออกมา ต้องตอบกลับด้วย ไม่งั้นบอทเงียบไป
+  try {
+    await approveWorkOrder(order, {
+      approvedById: approver.id, approvedByName: approver.fullName, approvalNote, actorLabel: `${approver.username} (LINE)`
+    });
+  } catch (error) {
+    return replyText(replyToken, serviceErrorText(error));
+  }
   return replyText(replyToken, `อนุมัติงาน ${srNumber} สำเร็จ ✅\nลูกค้า: ${order.customerName}`);
 };
 
@@ -693,16 +764,15 @@ const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, ses
   const { step, data } = session;
 
   if (step === 'srNumber') {
-    const order = await WorkOrder.findOne({ where: { srNumber: value } });
-    if (!order) {
+    const found = await findOrderForAction(value, technician, { verb: 'แนบรูป' });
+    if (found.notFound) {
       return replyText(replyToken, `ไม่พบงานเลขที่ ${value} กรุณาลองใหม่`);
     }
-    const isOwner = order.technicianId === technician.id;
-    const isSupervisor = isSupervisorRole(technician.role);
-    if (!isOwner && !isSupervisor) {
+    if (found.denied) {
       lineSession.clear(lineUserId);
-      return replyText(replyToken, 'คุณไม่มีสิทธิแนบรูปงานนี้');
+      return replyText(replyToken, found.denied);
     }
+    const { order } = found;
     if (order.status === 'cancelled') {
       lineSession.clear(lineUserId);
       return replyText(replyToken, `งาน ${value} ถูกยกเลิกแล้ว ไม่สามารถแนบรูปได้`);

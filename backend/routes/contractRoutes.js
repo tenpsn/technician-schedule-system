@@ -5,10 +5,19 @@ const MaVisit = require('../models/MaVisit');
 const WorkOrder = require('../models/WorkOrder');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
+const { isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const { createWorkOrder } = require('../services/workOrderService');
 const { sendServerError } = require('../utils/httpErrors');
 const logger = require('../config/logger');
 const { nextBusinessDay } = require('../utils/thaiHolidays');
+const { diffFields, recordAudit } = require('../utils/auditLog');
+
+// ช่องที่เก็บในประวัติการแก้ไข เก็บชื่อโรงพยาบาลแทน id ให้อ่านประวัติออกแม้โรงพยาบาลถูกลบภายหลัง
+const auditSnapshot = (contract, hospitalName) => ({
+  hospital: hospitalName, contractNumber: contract.contractNumber, startDate: contract.startDate,
+  endDate: contract.endDate, maIntervalMonths: contract.maIntervalMonths
+});
+const auditLabel = (contract, hospitalName) => `${contract.contractNumber} (${hospitalName})`;
 
 const VISIT_INCLUDE = [
   { model: WorkOrder, as: 'workOrder', include: [{ model: User, as: 'technician', attributes: ['id', 'fullName', 'username'] }] }
@@ -200,9 +209,17 @@ router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), 
       return res.status(400).json({ code: 'visit_already_assigned_reschedule_hint', message: 'This visit is already assigned — reschedule it from the job detail page instead' });
     }
 
+    const fromDate = visit.scheduledDate;
     visit.scheduledDate = scheduledDate;
     await visit.save();
     logger.info(`MA visit rescheduled: contract ${req.params.id}, visit #${visit.sequenceNo} -> ${scheduledDate}`);
+    if (fromDate !== scheduledDate) {
+      const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
+      await recordAudit({
+        entityType: 'contract', entityId: req.params.id, entityLabel: auditLabel(contract, contract.hospital?.name || '-'), action: 'update',
+        changes: [{ field: 'maVisitDate', seq: visit.sequenceNo, from: fromDate, to: scheduledDate }], user: req.user
+      });
+    }
     res.json(visit);
   } catch (error) {
     logger.error(`Update MA visit error: ${error.message}`);
@@ -230,6 +247,9 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
     if (!technician) {
       return res.status(404).json({ code: 'user_not_found', message: 'User not found' });
     }
+    if (isRegionRestricted(req.user) && technician.region !== RESTRICTED_SUPERVISOR_REGION) {
+      return res.status(403).json({ code: 'not_authorized_region', message: 'Southern-region supervisors can only manage jobs of southern-region technicians' });
+    }
 
     const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
     if (!contract) {
@@ -252,6 +272,11 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
     await visit.reload({ include: VISIT_INCLUDE });
 
     logger.info(`MA visit assigned: contract ${contract.id} visit #${visit.sequenceNo} -> ${technician.username} (${workOrder.srNumber})`);
+    await recordAudit({
+      entityType: 'contract', entityId: contract.id, entityLabel: auditLabel(contract, contract.hospital.name), action: 'update',
+      changes: [{ field: 'maVisitTechnician', seq: visit.sequenceNo, from: null, to: `${technician.fullName} (${workOrder.srNumber})` }],
+      user: req.user
+    });
     res.status(201).json(visit);
   } catch (error) {
     logger.error(`Assign MA visit error: ${error.message}`);
@@ -279,12 +304,18 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
       contractNumber: contractNumber.trim(),
       startDate,
       endDate,
-      maIntervalMonths: interval
+      maIntervalMonths: interval,
+      createdById: req.user.id,
+      createdByName: req.user.fullName
     });
     await regenerateVisits(contract.id, startDate, endDate, interval);
     await contract.reload({ include: [{ model: Hospital, as: 'hospital' }] });
 
     logger.info(`Contract added: ${contract.contractNumber} (${hospital.name})`);
+    await recordAudit({
+      entityType: 'contract', entityId: contract.id, entityLabel: auditLabel(contract, hospital.name), action: 'create',
+      changes: diffFields(null, auditSnapshot(contract, hospital.name)), user: req.user
+    });
     res.status(201).json({ ...contract.toJSON(), maCycle: await getCurrentMaCycle(contract, todayDateOnly()) });
   } catch (error) {
     logger.error(`Create contract error: ${error.message}`);
@@ -301,10 +332,11 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
       return res.status(400).json(validationError);
     }
 
-    const contract = await Contract.findByPk(req.params.id);
+    const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
     if (!contract) {
       return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
     }
+    const before = auditSnapshot(contract, contract.hospital?.name || null);
 
     const hospital = await Hospital.findByPk(hospitalId);
     if (!hospital) {
@@ -329,6 +361,13 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
     await contract.reload({ include: [{ model: Hospital, as: 'hospital' }] });
 
     logger.info(`Contract updated: ${contract.contractNumber} (${hospital.name})`);
+    const changes = diffFields(before, auditSnapshot(contract, hospital.name));
+    // กดบันทึกโดยไม่ได้เปลี่ยนอะไรไม่ต้องเก็บประวัติ
+    if (changes.length > 0) {
+      await recordAudit({
+        entityType: 'contract', entityId: contract.id, entityLabel: auditLabel(contract, hospital.name), action: 'update', changes, user: req.user
+      });
+    }
     res.json({ ...contract.toJSON(), maCycle: await getCurrentMaCycle(contract, todayDateOnly()) });
   } catch (error) {
     logger.error(`Update contract error: ${error.message}`);

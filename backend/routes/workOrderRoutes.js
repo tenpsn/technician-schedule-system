@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const WorkOrder = require('../models/WorkOrder');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
-const { isSupervisorRole } = require('../config/roles');
+const { isSupervisorRole, isBlockedByRegion, isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const { uploadPhotos, saveCompressedPhoto, deletePhotoFile } = require('../middleware/upload');
 const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto } = require('../services/workOrderService');
 const { sendServerError } = require('../utils/httpErrors');
@@ -18,14 +18,20 @@ const TECHNICIAN_ATTRS = ['id', 'fullName', 'username'];
 const APPROVER_ATTRS = ['id', 'fullName'];
 
 const DETAIL_INCLUDE = [
-  // region ต้องมีไว้เช็คสิทธิ์เลื่อนงานของหัวหน้าช่างภาคใต้ ดู PATCH /:id/reschedule
+  // region ต้องมีไว้เช็คสิทธิ์ของหัวหน้าช่างภาคใต้ ดู isBlockedByRegion
   { model: User, as: 'technician', attributes: [...TECHNICIAN_ATTRS, 'email', 'region'] },
   { model: User, as: 'approvedBy', attributes: APPROVER_ATTRS },
   { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
 ];
 
-// หัวหน้าช่างภาคใต้เท่านั้นที่ถูกจำกัดสิทธิ์นี้ (ไม่รวม admin) ภาคอื่นยังเลื่อนงานของช่างได้ทุกคนเหมือนเดิม
-const RESTRICTED_SUPERVISOR_REGION = 'ใต้';
+// หัวหน้าภาคใต้ได้รายการแค่งานของช่างภาคใต้ ใส่ where ที่ include ทำให้เป็น inner join ตัดงานภาคอื่นทิ้งตั้งแต่ query
+const technicianInclude = (user, attributes) => (isRegionRestricted(user)
+  ? { model: User, as: 'technician', attributes, where: { region: RESTRICTED_SUPERVISOR_REGION } }
+  : { model: User, as: 'technician', attributes });
+
+const sendRegionForbidden = (res) => res.status(403).json({
+  code: 'not_authorized_region', message: 'Southern-region supervisors can only manage jobs of southern-region technicians'
+});
 
 // สร้างใบงาน ขั้นตอนวางแผน
 router.post('/', protect, async (req, res) => {
@@ -103,7 +109,7 @@ router.get('/all', protect, authorize('supervisor', 'admin'), async (req, res) =
     const orders = await WorkOrder.findAll({
       where,
       include: [
-        { model: User, as: 'technician', attributes: TECHNICIAN_ATTRS },
+        technicianInclude(req.user, TECHNICIAN_ATTRS),
         { model: User, as: 'approvedBy', attributes: APPROVER_ATTRS },
         { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
       ],
@@ -137,7 +143,7 @@ router.get('/:id', protect, async (req, res) => {
     const isOwner = order.technicianId === req.user.id;
     const isSupervisor = isSupervisorRole(req.user.role);
 
-    if (!isOwner && !isSupervisor) {
+    if ((!isOwner && !isSupervisor) || isBlockedByRegion(req.user, order)) {
       return res.status(403).json({ code: 'not_authorized_view_order', message: 'Not authorized to view this order' });
     }
 
@@ -157,6 +163,8 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
     if (!order) {
       return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
     }
+
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
 
     await approveWorkOrder(order, {
       approvedById: req.user.id, approvedByName: req.user.fullName, approvalNote, actorLabel: req.user.username
@@ -193,11 +201,12 @@ router.patch('/:id/actual', protect, async (req, res) => {
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
     }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
 
     await logActualWork(order, {
       actualDate, actualStartTime, actualEndTime, actualLocation, actualDescription,
       repairCompleted, repairIncompleteReason, installationDelivered,
-      recordedById: req.user.id, actorLabel: req.user.username
+      recordedById: req.user.id, recordedByName: req.user.fullName, actorLabel: req.user.username
     });
 
     res.json(order);
@@ -226,6 +235,7 @@ router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
     }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ code: 'photos_required', message: 'Please select at least 1 photo' });
@@ -274,6 +284,7 @@ router.delete('/:id/photos', protect, async (req, res) => {
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized', message: 'Not authorized' });
     }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
 
     await removePhoto(order, photo, req.user.username);
     deletePhotoFile(photo);
@@ -311,11 +322,7 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
       return res.status(403).json({ code: 'not_authorized_reschedule', message: 'Not authorized to reschedule' });
     }
 
-    // หัวหน้าช่างภาคใต้ (ไม่รวม admin) เลื่อนได้แค่งานของช่างภาคใต้ด้วยกันเท่านั้น ภาคอื่นไม่ถูกจำกัด
-    if (!isOwner && req.user.role === 'supervisor' && req.user.region === RESTRICTED_SUPERVISOR_REGION
-      && order.technician?.region !== RESTRICTED_SUPERVISOR_REGION) {
-      return res.status(403).json({ code: 'not_authorized_reschedule_region', message: 'Supervisors can only reschedule jobs for technicians in their own region' });
-    }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
 
     await rescheduleWorkOrder(order, {
       newDate, reason, changedById: req.user.id, changedByName: req.user.fullName, actorLabel: req.user.username
@@ -351,6 +358,7 @@ router.patch('/:id/cancel', protect, async (req, res) => {
     if (!isOwner && !isSupervisor) {
       return res.status(403).json({ code: 'not_authorized_cancel', message: 'Not authorized to cancel this job' });
     }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
 
     await cancelWorkOrder(order, {
       cancelReason, cancelledById: req.user.id,
@@ -379,7 +387,7 @@ router.get('/status/overdue', protect, authorize('supervisor', 'admin'), async (
   try {
     const orders = await WorkOrder.findAll({
       where: { status: 'overdue', isOverdue: true },
-      include: [{ model: User, as: 'technician', attributes: TECHNICIAN_ATTRS }]
+      include: [technicianInclude(req.user, TECHNICIAN_ATTRS)]
     });
 
     // overdueDays ในฐานข้อมูลเป็นค่า snapshot จาก cron ครั้งล่าสุด อาจไม่ตรงกับปัจจุบันแล้ว
@@ -394,7 +402,7 @@ router.get('/status/overdue', protect, authorize('supervisor', 'admin'), async (
 });
 
 // ดึงใบงานที่ถูกยกเลิก สำหรับรายงานและประวัติ
-// หัวหน้า/admin เห็นของทุกคน ส่วนช่างเทคนิคเห็นได้แค่ใบงานของตัวเอง
+// หัวหน้า/admin เห็นของทุกคน ยกเว้นหัวหน้าภาคใต้เห็นแค่ภาคใต้ ส่วนช่างเทคนิคเห็นได้แค่ใบงานของตัวเอง
 router.get('/status/cancelled', protect, async (req, res) => {
   try {
     const { month, year } = req.query;
@@ -411,7 +419,7 @@ router.get('/status/cancelled', protect, async (req, res) => {
     const orders = await WorkOrder.findAll({
       where,
       include: [
-        { model: User, as: 'technician', attributes: TECHNICIAN_ATTRS },
+        technicianInclude(req.user, TECHNICIAN_ATTRS),
         { model: User, as: 'cancelledBy', attributes: TECHNICIAN_ATTRS }
       ],
       order: [['cancelledAt', 'DESC']]

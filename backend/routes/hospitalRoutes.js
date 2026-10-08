@@ -5,6 +5,10 @@ const Contract = require('../models/Contract');
 const { protect, authorize } = require('../middleware/auth');
 const { sendServerError } = require('../utils/httpErrors');
 const logger = require('../config/logger');
+const { diffFields, recordAudit } = require('../utils/auditLog');
+
+// ช่องที่เก็บในประวัติการแก้ไข
+const auditSnapshot = (h) => ({ name: h.name, address: h.address, facilityCode: h.facilityCode || null });
 
 const router = express.Router();
 
@@ -46,6 +50,10 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
       facilityCode: facilityCode ? facilityCode.trim() : null
     });
     logger.info(`Hospital added: ${hospital.name} (${hospital.address})`);
+    await recordAudit({
+      entityType: 'hospital', entityId: hospital.id, entityLabel: hospital.name, action: 'create',
+      changes: diffFields(null, auditSnapshot(hospital)), user: req.user
+    });
     res.status(201).json(hospital);
   } catch (error) {
     logger.error(`Create hospital error: ${error.message}`);
@@ -67,11 +75,17 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
       return res.status(404).json({ code: 'hospital_not_found', message: 'Hospital not found' });
     }
 
+    const before = auditSnapshot(hospital);
     hospital.name = name.trim();
     hospital.address = address.trim();
     hospital.facilityCode = facilityCode ? facilityCode.trim() : null;
     await hospital.save();
     logger.info(`Hospital updated: ${hospital.name} (${hospital.address})`);
+    const changes = diffFields(before, auditSnapshot(hospital));
+    // กดบันทึกโดยไม่ได้เปลี่ยนอะไรไม่ต้องเก็บประวัติ
+    if (changes.length > 0) {
+      await recordAudit({ entityType: 'hospital', entityId: hospital.id, entityLabel: hospital.name, action: 'update', changes, user: req.user });
+    }
     res.json(hospital);
   } catch (error) {
     logger.error(`Update hospital error: ${error.message}`);
@@ -95,6 +109,10 @@ router.delete('/:id', protect, authorize('supervisor', 'admin'), async (req, res
 
     await hospital.destroy();
     logger.info(`Hospital removed: ${hospital.name}`);
+    await recordAudit({
+      entityType: 'hospital', entityId: hospital.id, entityLabel: hospital.name, action: 'delete',
+      changes: diffFields(auditSnapshot(hospital), null), user: req.user
+    });
     res.json({ success: true });
   } catch (error) {
     logger.error(`Delete hospital error: ${error.message}`);

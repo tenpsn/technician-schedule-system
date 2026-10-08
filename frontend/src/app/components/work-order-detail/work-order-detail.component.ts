@@ -7,6 +7,8 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
 import { environment } from '../../../environments/environment';
 
+const SOUTHERN_REGION = 'ใต้';
+
 const REASON_KEYS_TH = ['ลูกค้าขอยกเลิกเนื่องจากเปลี่ยนผู้ให้บริการ', 'อุปกรณ์/อะไหล่ไม่พร้อม', 'ติดงานอื่นที่เร่งด่วนกว่า', 'สภาพอากาศไม่เอื้ออำนวย', 'ลูกค้าเลื่อนออกไปไม่มีกำหนด', 'อื่นๆ (ระบุเอง)'];
 const REASON_LABELS_TH = ['ลูกค้าขอยกเลิก', 'อุปกรณ์ไม่พร้อม', 'ติดงานเร่งด่วน', 'สภาพอากาศ', 'ลูกค้าเลื่อนไม่มีกำหนด', 'อื่นๆ'];
 const REASON_KEYS_EN = ['Customer requested cancellation (switched provider)', 'Parts/equipment not ready', 'Higher-priority job conflict', 'Weather', 'Customer postponed indefinitely', 'Other (specify)'];
@@ -85,6 +87,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
                   <span class="field-value">{{ log.installationDelivered ? i18n.t['deliveredYes'] : i18n.t['deliveredNo'] }}</span>
                 </div>
               </div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: {{ recordedByName(log) }}<ng-container *ngIf="log.recordedAt"> · {{ log.recordedAt | localDate:'dd/MM/yyyy HH:mm' }}</ng-container></div>
             </div>
           </div>
 
@@ -556,7 +559,8 @@ export class WorkOrderDetailComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.toastr.error(this.i18n.lang === 'th' ? 'ไม่สามารถโหลดข้อมูลงานได้' : 'Failed to load job');
+        // บอกเหตุผลจริงจาก server ถ้ามี เช่น ไม่มีสิทธิ์ดูงานภาคอื่น
+        this.toastr.error(this.i18n.errorMessage(err, this.i18n.lang === 'th' ? 'ไม่สามารถโหลดข้อมูลงานได้' : 'Failed to load job'));
         console.error(err);
         this.cdr.detectChanges();
       }
@@ -591,16 +595,34 @@ export class WorkOrderDetailComponent implements OnInit {
     return !!this.order && this.order.workType === this.installationType;
   }
 
+  // หัวหน้าช่างภาคใต้จัดการได้แค่งานของช่างภาคใต้ ต้องตรงกับ isBlockedByRegion ใน workOrderRoutes.js
+  get isBlockedByRegion(): boolean {
+    const user = this.auth.currentUser;
+    if (!this.order || !user) return false;
+    return this.order.technician?._id !== user._id && user.role === 'supervisor'
+      && user.region === SOUTHERN_REGION && this.order.technician?.region !== SOUTHERN_REGION;
+  }
+
+  // บันทึกเก่าก่อนมีการเก็บชื่อ ถ้าคนบันทึกคือช่างเจ้าของงานก็ยังรู้ชื่อได้จากตัวงาน
+  recordedByName(log: any): string {
+    if (log.recordedByName) return log.recordedByName;
+    if (log.recordedById && log.recordedById === this.order?.technician?._id) return this.order!.technician!.fullName;
+    return '—';
+  }
+
   get canUpdateActual(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
-    return isOwner && ['approved', 'overdue'].includes(this.order.status);
+    // หัวหน้าบันทึกแทนช่างได้ เช่น ช่างโทรมาแจ้งผลจากหน้างาน ประวัติจะแสดงชื่อผู้บันทึกไว้
+    return (isOwner || this.auth.isSupervisor) && !this.isBlockedByRegion
+      && ['approved', 'overdue'].includes(this.order.status);
   }
 
   get canReschedule(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
-    return (isOwner || this.auth.isSupervisor) && ['approved', 'pending_approval', 'overdue'].includes(this.order.status);
+    return (isOwner || this.auth.isSupervisor) && !this.isBlockedByRegion
+      && ['approved', 'pending_approval', 'overdue'].includes(this.order.status);
   }
 
   get canCancel(): boolean {
@@ -608,17 +630,17 @@ export class WorkOrderDetailComponent implements OnInit {
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
     const isSupervisor = this.auth.isSupervisor;
     const cancellableStatuses = ['draft', 'pending_approval', 'approved', 'overdue', 'in_progress'];
-    return (isOwner || isSupervisor) && cancellableStatuses.includes(this.order.status);
+    return (isOwner || isSupervisor) && !this.isBlockedByRegion && cancellableStatuses.includes(this.order.status);
   }
 
   get canApprove(): boolean {
-    return this.auth.isSupervisor && this.order?.status === 'pending_approval';
+    return this.auth.isSupervisor && !this.isBlockedByRegion && this.order?.status === 'pending_approval';
   }
 
   get canUploadPhotos(): boolean {
     if (!this.order) return false;
     const isOwner = this.order.technician?._id === this.auth.currentUser?._id;
-    return (isOwner || this.auth.isSupervisor) && this.order.status !== 'cancelled';
+    return (isOwner || this.auth.isSupervisor) && !this.isBlockedByRegion && this.order.status !== 'cancelled';
   }
 
   photoUrl(p: string): string {

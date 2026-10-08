@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
@@ -46,13 +46,13 @@ const WORK_TYPE_LABELS: Record<string, { th: string; en: string }> = {
               <div class="row">
                 <div class="field autocomplete-field">
                   <label>{{ i18n.t['hospitalName'] }} *</label>
-                  <input formControlName="customerName" type="text"
+                  <input #customerInput formControlName="customerName" type="text"
                          [placeholder]="i18n.t['sitePh']"
                          (input)="onCustomerNameInput()"
                          (focus)="onCustomerNameInput()"
                          (blur)="hideSuggestionsDelayed()"
                          autocomplete="off">
-                  <ul *ngIf="showSuggestions && hospitalSuggestions.length > 0" class="suggestions">
+                  <ul *ngIf="showSuggestions && hospitalSuggestions.length > 0" class="suggestions" [class.open-up]="suggestionsOpenUp" [style.bottom.px]="suggestionsBottom">
                     <li *ngFor="let h of hospitalSuggestions" (mousedown)="selectHospital(h)">
                       <strong>{{ h.name }}</strong> <span class="muted">{{ h.address }}</span>
                     </li>
@@ -158,10 +158,11 @@ const WORK_TYPE_LABELS: Record<string, { th: string; en: string }> = {
     .error { color: var(--danger-text); font-size: 12px; }
 
     .autocomplete-field .suggestions {
-      position: absolute; top: 100%; left: 0; right: 0; z-index: 10; margin-top: 2px;
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin-top: 2px;
       background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
       max-height: 220px; overflow-y: auto; padding: 4px; list-style: none;
     }
+    .autocomplete-field .suggestions.open-up { top: auto; margin: 0; }
     .suggestions li { padding: 8px 10px; cursor: pointer; font-size: 14px; border-radius: 8px; display: flex; justify-content: space-between; gap: 10px; }
     .suggestions li:hover { background: var(--info-bg); }
     .muted { color: var(--sub); font-size: 12px; }
@@ -180,11 +181,14 @@ const WORK_TYPE_LABELS: Record<string, { th: string; en: string }> = {
     }
   `]
 })
-export class WorkOrderFormComponent implements OnInit {
+export class WorkOrderFormComponent implements OnInit, OnDestroy {
   form: FormGroup;
   loading = false;
   saved = false;
   hospitalSuggestions: Hospital[] = [];
+  suggestionsOpenUp = false;
+  suggestionsBottom: number | null = null;
+  @ViewChild('customerInput') customerInput?: ElementRef<HTMLInputElement>;
   showSuggestions = false;
   workTypes: string[] = [];
   otherWorkType = '';
@@ -220,13 +224,27 @@ export class WorkOrderFormComponent implements OnInit {
       next: (hospitals) => {
         this.hospitalSuggestions = hospitals;
         this.showSuggestions = true;
+        this.suggestionsOpenUp = this.shouldOpenUp();
         this.cdr.detectChanges();
       },
       error: (err) => console.error('Error searching hospitals:', err)
     });
   }
 
+  // เลื่อนจอแล้วปิดรายการโรงพยาบาล ให้ตรงกับช่องเลือกอื่นๆ ในเว็บ ยกเว้นเลื่อนดูในรายการเอง
+  // ต้องสั่งวาดใหม่เอง เพราะแอปนี้ไม่ได้ใช้ zone ตรวจการเปลี่ยนแปลงให้
+  private closeSuggestionsOnScroll = (event: Event) => {
+    if (!this.showSuggestions || (event.target instanceof Element && event.target.closest('.suggestions'))) return;
+    this.showSuggestions = false;
+    this.cdr.detectChanges();
+  };
+
+  ngOnDestroy() {
+    document.removeEventListener('scroll', this.closeSuggestionsOnScroll, true);
+  }
+
   ngOnInit() {
+    document.addEventListener('scroll', this.closeSuggestionsOnScroll, true);
     this.workOrderService.getWorkTypes().subscribe(meta => {
       this.workTypes = meta.types;
       this.otherWorkType = meta.otherType;
@@ -252,6 +270,21 @@ export class WorkOrderFormComponent implements OnInit {
       otherControl?.setValue('');
     }
     otherControl?.updateValueAndValidity();
+  }
+
+  // ด้านล่างช่องที่ว่างไม่พอให้รายการโรงพยาบาลเปิดขึ้นด้านบนแทน เหมือนช่องเลือกอื่นๆ ในเว็บ
+  private shouldOpenUp(): boolean {
+    const input = this.customerInput?.nativeElement;
+    if (!input) return false;
+    const rect = input.getBoundingClientRect();
+    // แต่ละรายการสูงประมาณ 46px สูงสุด 220px ตามที่ตั้งใน css
+    const listHeight = Math.min(220, this.hospitalSuggestions.length * 46 + 8);
+    const edgeGap = 12;
+    const openUp = rect.bottom + listHeight > window.innerHeight - edgeGap && rect.top - listHeight >= edgeGap;
+    // วางรายการชิดขอบบนของช่องพิมพ์ ไม่ใช่เหนือหัวข้อช่อง ใช้ระยะจากล่างกล่องถึงขอบบนช่องพิมพ์
+    const container = input.parentElement as HTMLElement;
+    this.suggestionsBottom = openUp ? container.clientHeight - input.offsetTop + 2 : null;
+    return openUp;
   }
 
   onCustomerNameInput() {

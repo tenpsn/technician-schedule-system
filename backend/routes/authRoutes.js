@@ -5,7 +5,7 @@ const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
 const loginAttempts = require('../utils/loginAttempts');
 const { sendServerError } = require('../utils/httpErrors');
-const { isSupervisorRole } = require('../config/roles');
+const { isSupervisorRole, isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const logger = require('../config/logger');
 
 const router = express.Router();
@@ -106,6 +106,7 @@ router.post('/login', async (req, res) => {
         role: user.role,
         isSupervisor: isSupervisorRole(user.role),
         email: user.email,
+        region: user.region,
         token
       });
     } else {
@@ -181,6 +182,8 @@ router.get('/users', protect, authorize('supervisor', 'admin'), async (req, res)
     } else {
       where.active = true;
     }
+    // หัวหน้าภาคใต้เห็นรายชื่อแค่คนในภาคใต้ ทั้งในปฏิทิน แดชบอร์ด และตัวเลือกมอบหมายงาน
+    if (isRegionRestricted(req.user)) where.region = RESTRICTED_SUPERVISOR_REGION;
 
     const users = await User.findAll({ where, order: [['fullName', 'ASC']] });
     res.json(users);

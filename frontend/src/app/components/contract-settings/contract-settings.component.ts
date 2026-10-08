@@ -80,6 +80,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 <th>{{ i18n.t['contractStart'] }}</th>
                 <th>{{ i18n.t['contractEnd'] }}</th>
                 <th class="col-ma">{{ i18n.t['contractMaInterval'] }}</th>
+                <th class="col-by">{{ i18n.t['contractCreatedBy'] }}</th>
                 <th class="col-status">{{ i18n.t['contractStatus'] }}</th>
                 <th class="col-actions"></th>
               </tr>
@@ -96,6 +97,10 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 <td class="muted">{{ c.startDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
                 <td class="muted">{{ c.endDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
                 <td class="muted">{{ maLabel(c.maIntervalMonths) }}</td>
+                <td class="muted">
+                  <div>{{ c.createdByName || '—' }}</div>
+                  <div class="by-date mono" *ngIf="c.createdAt">{{ c.createdAt | localDate:'dd/MM/yyyy' }}</div>
+                </td>
                 <td><span class="status-badge" [ngClass]="'status-' + contractStatus(c)">{{ statusLabel(c) }}</span></td>
                 <td class="actions-cell">
                   <button (click)="openVisits(c)" class="btn-edit">{{ i18n.t['contractVisits'] }}</button>
@@ -103,7 +108,7 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
                 </td>
               </tr>
               <tr *ngIf="filteredContracts.length === 0">
-                <td colspan="9" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="10" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
@@ -262,12 +267,14 @@ function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
     .empty-state { text-align: center; padding: 40px 20px; color: var(--sub); }
 
     .table-scroll { overflow-x: auto; }
-    .data-table { width: 100%; min-width: 900px; border-collapse: collapse; }
+    .data-table { width: 100%; min-width: 1040px; border-collapse: collapse; }
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 12px 20px; border-bottom: 1px solid var(--line2); font-size: 13.5px; }
     .muted { color: var(--sub); }
     .col-ma { width: 110px; }
     .col-status { width: 140px; }
+    .col-by { width: 150px; }
+    .by-date { font-size: 11.5px; margin-top: 2px; }
     .col-actions { width: 170px; }
     .col-alert { width: 220px; }
     .ma-cell { white-space: nowrap; }

@@ -5,6 +5,7 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const logger = require('../config/logger');
 const { computeOverdue } = require('../utils/overdueCalc');
+const { findSupervisorsToNotify } = require('../services/workOrderService');
 
 // รันทุก 30 นาที ให้ตรงกับตัวเลือกเวลาในฟอร์มเว็บที่มีช่วงห่างกัน 30 นาทีเท่ากัน ดู time picker component.ts
 cron.schedule('*/30 * * * *', async () => {
@@ -45,17 +46,21 @@ cron.schedule('*/30 * * * *', async () => {
             type: 'overdue',
             title: '⚠️ งานค้างเกินกำหนด',
             message: `งาน ${order.srNumber} (${order.customerName}) ค้าง ${days} วัน กรุณาอัปเดตสถานะหรือเลื่อนงาน`,
+            code: 'overdue_own',
+            data: { srNumber: order.srNumber, customer: order.customerName, days },
             relatedWorkOrderId: order.id
           });
 
-          // แจ้งเตือนหัวหน้างานทุกคน
-          const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
+          // แจ้งเตือนหัวหน้างาน ยกเว้นหัวหน้าภาคใต้ที่ไม่ใช่งานภาคใต้
+          const supervisors = await findSupervisorsToNotify(order.technicianId);
           for (const sup of supervisors) {
             await Notification.create({
               recipientId: sup.id,
               type: 'overdue',
               title: '⚠️ แจ้งเตือนงานค้าง',
               message: `งาน ${order.srNumber} ของ ${order.technician.fullName} ค้าง ${days} วัน`,
+              code: 'overdue_team',
+              data: { srNumber: order.srNumber, technician: order.technician.fullName, days },
               relatedWorkOrderId: order.id
             });
           }

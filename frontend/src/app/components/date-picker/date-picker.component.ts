@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, Input, OnDestroy, forwardRef } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, Input, OnDestroy, forwardRef } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { I18nService } from '../../services/i18n.service';
 
@@ -19,7 +19,7 @@ function pad(n: number): string {
         <span class="dp-icon">📅</span>
       </button>
 
-      <div class="dp-panel" *ngIf="open" [style.top.px]="panelTop" [style.left.px]="panelLeft">
+      <div class="dp-panel" *ngIf="open" [style.top.px]="panelTop" [style.bottom.px]="panelBottom" [style.left.px]="panelLeft">
         <div class="dp-panel-head">
           <button type="button" class="dp-nav" (click)="prevMonth(); $event.stopPropagation()">‹</button>
           <div class="dp-title-selects">
@@ -108,16 +108,21 @@ export class DatePickerComponent implements ControlValueAccessor, OnDestroy {
   viewYear: number;
   viewMonth: number;
   today = new Date();
-  panelTop = 0;
+  panelTop: number | null = 0;
+  panelBottom: number | null = null;
   panelLeft = 0;
 
   private onChange: (value: string) => void = () => {};
   private onTouched: () => void = () => {};
-  // ใช้ capture phase เพื่อให้การ scroll ใน ancestor ใดๆ เช่น modal ที่เลื่อนได้
-  // ปิด panel นี้ด้วย เพราะ scroll event ไม่ bubble ขึ้นมา ต้อง capture เท่านั้น
-  private closeOnScroll = () => { if (this.open) this.open = false; };
+  // panel แบบ fixed ไม่เลื่อนตามหน้า ถ้าคำนวณตำแหน่งตามทุกครั้งจะช้ากว่าจอหนึ่งเฟรมจนเห็นกระตุก จึงปิดไปเลยเหมือน select ของเบราว์เซอร์
+  // ใช้ capture เพราะ scroll ของ ancestor ไม่ bubble และต้องสั่งวาดใหม่เอง เพราะแอปนี้ไม่ได้ใช้ zone ตรวจการเปลี่ยนแปลงให้
+  private closeOnScroll = (event: Event) => {
+    if (!this.open || this.elementRef.nativeElement.querySelector('.dp-panel')?.contains(event.target)) return;
+    this.open = false;
+    this.cdr.detectChanges();
+  };
 
-  constructor(public i18n: I18nService, private elementRef: ElementRef) {
+  constructor(public i18n: I18nService, private elementRef: ElementRef, private cdr: ChangeDetectorRef) {
     this.viewYear = this.today.getFullYear();
     this.viewMonth = this.today.getMonth();
     document.addEventListener('scroll', this.closeOnScroll, true);
@@ -225,11 +230,11 @@ export class DatePickerComponent implements ControlValueAccessor, OnDestroy {
     left = Math.min(left, window.innerWidth - panelWidth - edgeGap);
     left = Math.max(edgeGap, left);
 
-    let top = rect.bottom + margin;
-    if (top + estimatedHeight > window.innerHeight - edgeGap) {
-      top = rect.top - estimatedHeight - margin;
-    }
-    top = Math.max(edgeGap, top);
+    const openUp = rect.bottom + margin + estimatedHeight > window.innerHeight - edgeGap
+      && rect.top - estimatedHeight - margin >= edgeGap;
+    // เปิดขึ้นบนให้ยึดขอบล่างของกล่องกับขอบบนของช่อง กล่องจะชิดช่องพอดีไม่ว่าจะสูงเท่าไร
+    this.panelBottom = openUp ? window.innerHeight - rect.top + margin : null;
+    const top: number | null = openUp ? null : rect.bottom + margin;
 
     this.panelLeft = left;
     this.panelTop = top;

@@ -30,6 +30,8 @@ export interface Contract {
   maIntervalMonths: number;
   hospital?: Hospital;
   maCycle?: MaCycle | null;
+  createdByName?: string | null;
+  createdAt?: string;
 }
 
 export interface MaVisitWorkOrder {

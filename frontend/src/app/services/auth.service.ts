@@ -21,7 +21,7 @@ export interface User {
   email?: string;
   phone?: string;
   province?: string;
-  region?: string;
+  region?: string | null;
   active?: boolean;
   token?: string;
   isSupervisor?: boolean;
@@ -37,9 +37,9 @@ export class AuthService {
     if (saved) {
       const user = JSON.parse(saved);
       this.currentUserSubject.next(user);
-      // เซสชันเก่าไม่มี isSupervisor ต้องขอข้อมูลสดมาเติม เลื่อนออกนอกคอนสตรักเตอร์
+      // เซสชันเก่าไม่มี isSupervisor หรือ region ต้องขอข้อมูลสดมาเติม เลื่อนออกนอกคอนสตรักเตอร์
       // กัน AuthInterceptor ที่ inject AuthService ชนกับตัวเองระหว่างยังสร้างไม่เสร็จ
-      if (user.isSupervisor === undefined) {
+      if (user.isSupervisor === undefined || !('region' in user)) {
         Promise.resolve().then(() => this.refreshSupervisorFlag(user));
       }
     }
@@ -48,7 +48,7 @@ export class AuthService {
   private refreshSupervisorFlag(user: User): void {
     this.getMe().subscribe({
       next: (fresh) => {
-        const merged: User = { ...user, role: fresh.role, isSupervisor: fresh.isSupervisor };
+        const merged: User = { ...user, role: fresh.role, isSupervisor: fresh.isSupervisor, region: fresh.region ?? null };
         localStorage.setItem('currentUser', JSON.stringify(merged));
         this.currentUserSubject.next(merged);
       },

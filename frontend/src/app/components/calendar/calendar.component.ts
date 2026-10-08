@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { WorkOrderService, WorkOrder } from '../../services/work-order.service';
 import { AuthService, User } from '../../services/auth.service';
@@ -22,10 +22,10 @@ import { Router } from '@angular/router';
 
         <div class="period-nav">
           <button (click)="prevPeriod()">‹</button>
-          <button type="button" class="period-label" (click)="toggleMonthPicker()">{{ periodLabel }}</button>
+          <button type="button" class="period-label" (click)="toggleMonthPicker($event)">{{ periodLabel }}</button>
           <button (click)="nextPeriod()">›</button>
 
-          <div class="month-picker" *ngIf="showMonthPicker">
+          <div class="month-picker" *ngIf="showMonthPicker" [class.open-up]="monthPickerOpenUp">
             <div class="mp-head">
               <button type="button" class="mp-nav" (click)="pickerYear = pickerYear - 1">‹</button>
               <div class="mp-year mono">{{ pickerYearLabel }}</div>
@@ -269,6 +269,7 @@ import { Router } from '@angular/router';
       width: 240px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 12px; box-shadow: 0 12px 30px rgba(8, 9, 11, 0.26); animation: modalIn .16s ease both;
     }
+    .month-picker.open-up { top: auto; bottom: calc(100% + 6px); }
     .mp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .mp-nav { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--sub); font-size: 14px; }
     .mp-nav:hover { border-color: var(--accent); color: var(--accent); }
@@ -411,7 +412,7 @@ import { Router } from '@angular/router';
     }
   `]
 })
-export class CalendarComponent implements OnInit {
+export class CalendarComponent implements OnInit, OnDestroy {
   view: 'month' | 'week' | 'day' = 'month';
   currentMonth: Date = new Date();
   selectedDate: Date = new Date();
@@ -427,6 +428,7 @@ export class CalendarComponent implements OnInit {
   filterTech: string | null = null;
   hours = Array.from({ length: 24 }, (_, i) => i);
   showMonthPicker = false;
+  monthPickerOpenUp = false;
   pickerYear = new Date().getFullYear();
   private ordersSub?: Subscription;
 
@@ -455,7 +457,20 @@ export class CalendarComponent implements OnInit {
     }
   }
 
+  // เลื่อนจอแล้วปิดตัวเลือกเดือน ให้ตรงกับช่องเลือกอื่นๆ ในเว็บ
+  // ต้องสั่งวาดใหม่เอง เพราะแอปนี้ไม่ได้ใช้ zone ตรวจการเปลี่ยนแปลงให้
+  private closeMonthPickerOnScroll = () => {
+    if (!this.showMonthPicker) return;
+    this.showMonthPicker = false;
+    this.cdr.detectChanges();
+  };
+
+  ngOnDestroy() {
+    document.removeEventListener('scroll', this.closeMonthPickerOnScroll, true);
+  }
+
   ngOnInit() {
+    document.addEventListener('scroll', this.closeMonthPickerOnScroll, true);
     this.loadCalendar();
     if (this.auth.isSupervisor) {
       this.userService.getTeamMembers().subscribe({
@@ -616,9 +631,13 @@ export class CalendarComponent implements OnInit {
     return this.view === 'month' ? this.currentMonth : this.selectedDate;
   }
 
-  toggleMonthPicker() {
+  toggleMonthPicker(event: MouseEvent) {
     this.showMonthPicker = !this.showMonthPicker;
     if (this.showMonthPicker) {
+      // ด้านล่างที่ว่างไม่พอให้เปิดขึ้นด้านบนแทน เหมือนช่องเลือกอื่นๆ ในเว็บ
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      const pickerHeight = 230;
+      this.monthPickerOpenUp = rect.bottom + pickerHeight > window.innerHeight - 12 && rect.top - pickerHeight >= 12;
       this.pickerYear = this.pickerBaseDate.getFullYear();
     }
   }

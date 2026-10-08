@@ -22,7 +22,7 @@ const NOTIF_POLL_MS = 30000;
         <nav class="top-nav">
           <a routerLink="/calendar" routerLinkActive="active">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</a>
           <div class="nav-dropdown">
-            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">{{ i18n.t['navJobs'] }}</button>
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">{{ i18n.t['navJobs'] }}<span class="nav-caret" [class.open]="showJobsMenu">▾</span></button>
             <div class="nav-dropdown-menu" *ngIf="showJobsMenu">
               <button class="nav-dropdown-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
               <button class="nav-dropdown-item" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
@@ -30,10 +30,11 @@ const NOTIF_POLL_MS = 30000;
           </div>
           <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">{{ i18n.t['navDashboard'] }}</a>
           <div class="nav-dropdown" *ngIf="auth.isSupervisor">
-            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}</button>
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts') || currentUrl.startsWith('/settings/history')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}<span class="nav-caret" [class.open]="showCustomerMenu">▾</span></button>
             <div class="nav-dropdown-menu" *ngIf="showCustomerMenu">
               <button class="nav-dropdown-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
               <button class="nav-dropdown-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
+              <button class="nav-dropdown-item" (click)="goToAuditHistory()">{{ i18n.t['auditHistory'] }}</button>
             </div>
           </div>
           <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">{{ i18n.t['navUsers'] }}</a>
@@ -73,20 +74,21 @@ const NOTIF_POLL_MS = 30000;
         </div>
 
         <div class="notif-wrap">
-          <button class="bell-btn" (click)="toggleNotifications()" [title]="i18n.t['notifications']">
+          <button #bellBtn class="bell-btn" (click)="toggleNotifications(bellBtn)" [title]="i18n.t['notifications']">
             🔔
             <span class="badge" *ngIf="unreadCount > 0">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
           </button>
 
-          <div class="notif-panel" *ngIf="showNotifications">
+          <div class="notif-panel" *ngIf="showNotifications"
+               [style.left.px]="notifPanelLeft" [style.right]="notifPanelLeft !== null ? 'auto' : null">
             <div class="notif-head">
               <span>{{ i18n.t['notifications'] }}</span>
               <button class="link-btn" *ngIf="unreadCount > 0" (click)="onMarkAllRead()">{{ i18n.t['markAllRead'] }}</button>
             </div>
             <div class="notif-list">
               <div class="notif-item" *ngFor="let n of notifications" [class.unread]="!n.isRead" (click)="openNotification(n)">
-                <div class="notif-title">{{ n.title }}</div>
-                <div class="notif-message">{{ n.message }}</div>
+                <div class="notif-title">{{ i18n.notificationTitle(n) }}</div>
+                <div class="notif-message">{{ i18n.notificationMessage(n) }}</div>
                 <div class="notif-time mono">{{ n.createdAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
               </div>
               <div class="notif-empty" *ngIf="notifications.length === 0">{{ i18n.t['noNotifications'] }}</div>
@@ -105,7 +107,7 @@ const NOTIF_POLL_MS = 30000;
         </a>
         <div class="bottom-nav-dropdown">
           <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">
-            <span class="glyph">✚</span><span class="label">{{ i18n.t['navJobs'] }}</span>
+            <span class="glyph">✚</span><span class="label">{{ i18n.t['navJobs'] }}<span class="nav-caret up" [class.open]="showJobsMenu">▾</span></span>
           </button>
           <div class="bottom-nav-menu" *ngIf="showJobsMenu">
             <button class="bottom-nav-menu-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
@@ -116,12 +118,13 @@ const NOTIF_POLL_MS = 30000;
           <span class="glyph">▤</span><span class="label">{{ i18n.t['navDashboard'] }}</span>
         </a>
         <div class="bottom-nav-dropdown" *ngIf="auth.isSupervisor">
-          <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">
-            <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}</span>
+          <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts') || currentUrl.startsWith('/settings/history')" (click)="toggleCustomerMenu()">
+            <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}<span class="nav-caret up" [class.open]="showCustomerMenu">▾</span></span>
           </button>
           <div class="bottom-nav-menu" *ngIf="showCustomerMenu">
             <button class="bottom-nav-menu-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
             <button class="bottom-nav-menu-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
+            <button class="bottom-nav-menu-item" (click)="goToAuditHistory()">{{ i18n.t['auditHistory'] }}</button>
           </div>
         </div>
         <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">
@@ -185,6 +188,11 @@ const NOTIF_POLL_MS = 30000;
       text-decoration: none; cursor: pointer;
     }
     .nav-dropdown:last-child .nav-dropdown-toggle { border-right: none; }
+    /* ลูกศรบอกว่าเป็นเมนูแบบกดแล้วมีรายการย่อย ปิดชี้ลง เปิดหมุนชี้ขึ้น ส่วนแถบล่างมือถือเมนูเปิดขึ้นบนจึงกลับทิศ */
+    .nav-caret { display: inline-block; margin-left: 6px; font-size: 10px; opacity: 0.75; transition: transform .16s ease; }
+    .nav-caret.open { transform: rotate(180deg); }
+    .nav-caret.up { margin-left: 3px; transform: rotate(180deg); }
+    .nav-caret.up.open { transform: none; }
     .nav-dropdown-toggle:hover { filter: brightness(1.15); }
     .nav-dropdown-toggle.active { background: var(--accent); color: #fff; }
     .nav-dropdown-menu {
@@ -363,6 +371,8 @@ const NOTIF_POLL_MS = 30000;
 export class AppComponent implements OnInit, OnDestroy {
   showLogoutConfirm = false;
   showNotifications = false;
+  notifPanelLeft: number | null = null;
+  private notifOpenedAtWidth = 0;
   showUserMenu = false;
   showCustomerMenu = false;
   showJobsMenu = false;
@@ -384,7 +394,20 @@ export class AppComponent implements OnInit, OnDestroy {
     this.router.events.subscribe(event => {
       if (event instanceof NavigationEnd) this.currentUrl = event.urlAfterRedirects;
     });
+    document.addEventListener('scroll', this.closeMenusOnScroll, true);
   }
+
+  // เลื่อนจอแล้วปิดเมนูและกล่องแจ้งเตือนทั้งหมด ให้ตรงกับช่องเลือกวันที่ เวลา และตัวเลือกอื่นๆ ในเว็บ
+  // ยกเว้นเลื่อนดูในรายการแจ้งเตือนเอง ต้องสั่งวาดใหม่เอง เพราะแอปนี้ไม่ได้ใช้ zone ตรวจการเปลี่ยนแปลงให้
+  private closeMenusOnScroll = (event: Event) => {
+    const anyOpen = this.showNotifications || this.showUserMenu || this.showCustomerMenu || this.showJobsMenu;
+    if (!anyOpen || (event.target instanceof Element && event.target.closest('.notif-list'))) return;
+    this.showNotifications = false;
+    this.showUserMenu = false;
+    this.showCustomerMenu = false;
+    this.showJobsMenu = false;
+    this.cdr.detectChanges();
+  };
 
   ngOnInit() {
     setTimeout(() => this.refreshUnreadCount());
@@ -393,6 +416,14 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.pollHandle) clearInterval(this.pollHandle);
+    document.removeEventListener('scroll', this.closeMenusOnScroll, true);
+  }
+
+  // ตำแหน่งกล่องแจ้งเตือนคำนวณตอนเปิด ถ้าความกว้างจอเปลี่ยนระหว่างเปิดอยู่ให้ปิดไปก่อน กันกล่องค้างผิดที่
+  // เช็คแค่ความกว้าง เพราะมือถือยิง resize ตอนเลื่อนจอแล้วแถบที่อยู่ซ่อนตัว ซึ่งเปลี่ยนแค่ความสูง
+  @HostListener('window:resize')
+  onWindowResize() {
+    if (window.innerWidth !== this.notifOpenedAtWidth) this.showNotifications = false;
   }
 
   @HostListener('document:click', ['$event'])
@@ -445,6 +476,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.router.navigate(['/settings/contracts']);
   }
 
+  goToAuditHistory() {
+    this.showCustomerMenu = false;
+    this.router.navigate(['/settings/history']);
+  }
+
   goToAddWork() {
     this.showJobsMenu = false;
     this.router.navigate(['/work-orders/new']);
@@ -472,9 +508,19 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  toggleNotifications() {
+  // ยึดขอบขวากล่องกับกระดิ่งเป็นหลัก แต่ดันกลับเข้าจอเมื่อเมนูบนแบ่งเป็นสองบรรทัดแล้วกระดิ่งไปอยู่ชิดซ้าย
+  private positionNotifPanel(bell: HTMLElement) {
+    const width = Math.min(340, window.innerWidth - 36);
+    const bellRect = bell.getBoundingClientRect();
+    const left = Math.min(Math.max(bellRect.right - width, 16), window.innerWidth - 16 - width);
+    this.notifPanelLeft = left - bellRect.left;
+    this.notifOpenedAtWidth = window.innerWidth;
+  }
+
+  toggleNotifications(bell: HTMLElement) {
     this.showNotifications = !this.showNotifications;
     if (this.showNotifications) {
+      this.positionNotifPanel(bell);
       this.showUserMenu = false;
       this.notificationService.list().subscribe({
         next: (list) => { this.notifications = list; this.cdr.detectChanges(); },

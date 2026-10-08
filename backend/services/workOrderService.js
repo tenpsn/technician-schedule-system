@@ -4,6 +4,7 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { formatThaiDate } = require('../utils/dateFormat');
 const { isRepairType, isInstallationType } = require('../config/workTypes');
+const { SUPERVISOR_ROLES, isBlockedByRegion } = require('../config/roles');
 const logger = require('../config/logger');
 
 // ต่อจากเลขที่สูงสุดที่มีอยู่จริง ไม่ใช่นับจำนวนแถว เพราะถ้ามีใบงานตรงกลางถูกลบไปก่อนหน้า (เช่น ยกเลิกสัญญาแล้วลบใบงาน MA ที่เกิดจากสัญญานั้น)
@@ -29,6 +30,18 @@ const isDuplicateSRNumber = (error) => error.name === 'SequelizeUniqueConstraint
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const MAX_SR_NUMBER_RETRIES = 10;
+
+// วันที่ในข้อมูลแจ้งเตือนเก็บเป็น YYYY-MM-DD ล้วน ให้หน้าเว็บแสดงเป็น พ.ศ. หรือ ค.ศ. ตามภาษาเอง
+// plannedDate เป็น UTC midnight อยู่แล้ว ตัดจาก ISO string ได้ตรงวันเสมอ ดู overdueCalc.js
+const toDateOnly = (date) => new Date(date).toISOString().slice(0, 10);
+
+// หัวหน้าช่างภาคใต้ไม่ได้รับแจ้งเตือนงานของช่างภาคอื่น เพราะจัดการงานนั้นไม่ได้อยู่แล้ว ดู isBlockedByRegion
+// ดึง region ของช่างเองเลย เพราะแต่ละจุดที่เรียกโหลด technician มาไม่เหมือนกัน
+const findSupervisorsToNotify = async (technicianId) => {
+  const technician = await User.findByPk(technicianId, { attributes: ['region'] });
+  const supervisors = await User.findAll({ where: { role: { [Op.in]: SUPERVISOR_ROLES } } });
+  return supervisors.filter((sup) => !isBlockedByRegion(sup, { technicianId, technician }));
+};
 
 // สร้างใบงานและแจ้งเตือนหัวหน้างาน ใช้ร่วมกันทั้ง HTTP route และ LINE bot
 // เพื่อให้เลข SR และการแจ้งเตือนขออนุมัติตรงกันเสมอ
@@ -62,13 +75,15 @@ const createWorkOrder = async ({ technician, customerName, customerLocation, wor
     }
   }
 
-  const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
+  const supervisors = await findSupervisorsToNotify(technician.id);
   for (const sup of supervisors) {
     await Notification.create({
       recipientId: sup.id,
       type: 'approval_needed',
       title: '📋 รออนุมัติแผนงาน',
       message: `ช่าง ${technician.fullName} เสนอแผนงาน ${srNumber} - ${customerName}`,
+      code: 'plan_submitted',
+      data: { technician: technician.fullName, srNumber, customer: customerName },
       relatedWorkOrderId: workOrder.id
     });
   }
@@ -112,6 +127,8 @@ const approveWorkOrder = async (order, { approvedById, approvedByName, approvalN
     type: 'approval_needed',
     title: '✅ แผนงานได้รับการอนุมัติ',
     message: `งาน ${order.srNumber} (${order.customerName}) ได้รับการอนุมัติแล้ว`,
+    code: 'plan_approved',
+    data: { srNumber: order.srNumber, customer: order.customerName },
     relatedWorkOrderId: order.id
   });
 
@@ -150,13 +167,15 @@ const rescheduleWorkOrder = async (order, { newDate, reason, changedById, change
   order.overdueDays = 0;
   await order.save();
 
-  const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
+  const supervisors = await findSupervisorsToNotify(order.technicianId);
   for (const sup of supervisors) {
     await Notification.create({
       recipientId: sup.id,
       type: 'rescheduled',
       title: '🔄 งานถูกเลื่อน',
-      message: `งาน ${order.srNumber} เลื่อนจาก ${formatThaiDate(fromDate)} เป็น ${newDate}\nเหตุผล: ${reason}`,
+      message: `งาน ${order.srNumber} เลื่อนจาก ${formatThaiDate(fromDate)} เป็น ${formatThaiDate(newDate)}\nเหตุผล: ${reason}`,
+      code: 'job_rescheduled',
+      data: { srNumber: order.srNumber, fromDate: toDateOnly(fromDate), toDate: toDateOnly(newDate), reason },
       relatedWorkOrderId: order.id
     });
   }
@@ -190,16 +209,20 @@ const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCanc
       type: 'cancelled',
       title: '🚫 งานถูกยกเลิกโดยหัวหน้า',
       message: `งาน ${order.srNumber} (${order.customerName}) ถูกยกเลิก\nเหตุผล: ${cancelReason}`,
+      code: 'cancelled_by_supervisor',
+      data: { srNumber: order.srNumber, customer: order.customerName, reason: cancelReason },
       relatedWorkOrderId: order.id
     });
   } else if (!isSupervisorCancelling) {
-    const supervisors = await User.findAll({ where: { role: { [Op.in]: ['supervisor', 'admin'] } } });
+    const supervisors = await findSupervisorsToNotify(order.technicianId);
     for (const sup of supervisors) {
       await Notification.create({
         recipientId: sup.id,
         type: 'cancelled',
         title: '🚫 ช่างขอยกเลิกงาน',
         message: `${order.technician?.fullName || ''} ยกเลิกงาน ${order.srNumber} (${order.customerName})\nเหตุผล: ${cancelReason}`,
+        code: 'cancelled_by_technician',
+        data: { technician: order.technician?.fullName || '', srNumber: order.srNumber, customer: order.customerName, reason: cancelReason },
         relatedWorkOrderId: order.id
       });
     }
@@ -211,7 +234,7 @@ const cancelWorkOrder = async (order, { cancelReason, cancelledById, isOwnerCanc
 // workType เป็นซ่อมหรือติดตั้งเท่านั้นที่ต้องถามว่าทำเสร็จหรือไม่
 // ประเภทอื่นถือว่าเสร็จทันทีที่บันทึกผลจริง
 const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime, actualLocation, actualDescription,
-  repairCompleted, repairIncompleteReason, installationDelivered, recordedById, actorLabel }) => {
+  repairCompleted, repairIncompleteReason, installationDelivered, recordedById, recordedByName, actorLabel }) => {
   if (!actualDescription) {
     throw badRequest('Actual description is required', 'actual_description_required');
   }
@@ -229,7 +252,7 @@ const logActualWork = async (order, { actualDate, actualStartTime, actualEndTime
   }
 
   const logEntry = { actualDate, actualStartTime, actualEndTime, actualLocation, actualDescription,
-    recordedById, recordedAt: new Date() };
+    recordedById, recordedByName: recordedByName || null, recordedAt: new Date() };
   if (isRepair) {
     logEntry.repairCompleted = repairCompleted;
     logEntry.repairIncompleteReason = repairCompleted ? null : repairIncompleteReason.trim();
@@ -293,4 +316,4 @@ const removePhoto = async (order, photoUrl, actorLabel) => {
   return order;
 };
 
-module.exports = { generateSRNumber, createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto, CANCELLABLE_STATUSES };
+module.exports = { generateSRNumber, createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto, findSupervisorsToNotify, CANCELLABLE_STATUSES };

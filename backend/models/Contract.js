@@ -30,6 +30,13 @@ const Contract = sequelize.define('Contract', {
     type: DataTypes.INTEGER,
     allowNull: false,
     validate: { min: 1, max: 12 }
+  },
+  // ผู้เพิ่มสัญญา เก็บชื่อไว้ด้วยให้ยังแสดงถูกแม้ผู้ใช้เปลี่ยนชื่อภายหลัง สัญญาเก่าก่อนมีช่องนี้จะเป็นค่าว่าง
+  createdById: {
+    type: DataTypes.UUID
+  },
+  createdByName: {
+    type: DataTypes.STRING
   }
 }, {
   tableName: 'contracts',

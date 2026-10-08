@@ -17,6 +17,7 @@ const hospitalRoutes = require('./routes/hospitalRoutes');
 const contractRoutes = require('./routes/contractRoutes');
 const lineRoutes = require('./routes/lineRoutes');
 const provinceRoutes = require('./routes/provinceRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
 
 // งาน cron
 require('./cron/overdueCheck');
@@ -61,6 +62,7 @@ app.use('/api/hospitals', hospitalRoutes);
 app.use('/api/contracts', contractRoutes);
 app.use('/api/line', lineRoutes);
 app.use('/api/provinces', provinceRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 // ตรวจสอบสถานะเซิร์ฟเวอร์
 app.get('/api/health', (req, res) => {
@@ -74,7 +76,8 @@ app.get('/api/health', (req, res) => {
 // ตัวจัดการ error กลาง
 app.use((err, req, res, next) => {
   logger.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
+    code: 'server_error',
     message: 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });

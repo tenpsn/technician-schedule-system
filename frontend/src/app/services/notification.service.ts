@@ -9,6 +9,8 @@ export interface AppNotification {
   type: 'overdue' | 'approval_needed' | 'rescheduled' | 'completed' | 'cancelled';
   title: string;
   message: string;
+  code?: string | null;
+  data?: Record<string, string | number> | null;
   isRead: boolean;
   createdAt: string;
   relatedWorkOrder?: { _id: string; srNumber: string; customerName: string } | null;
