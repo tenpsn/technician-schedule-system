@@ -7,6 +7,7 @@ const loginAttempts = require('../utils/loginAttempts');
 const { sendServerError } = require('../utils/httpErrors');
 const { isSupervisorRole, isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const logger = require('../config/logger');
+const { uploadAvatar, saveAvatar, deletePhotoFile } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -107,6 +108,7 @@ router.post('/login', async (req, res) => {
         isSupervisor: isSupervisorRole(user.role),
         email: user.email,
         region: user.region,
+        avatarUrl: user.avatarUrl,
         token
       });
     } else {
@@ -160,6 +162,41 @@ router.patch('/me', protect, async (req, res) => {
     res.json(user);
   } catch (error) {
     logger.error(`Update profile error: ${error.message}`);
+    sendServerError(res);
+  }
+});
+
+// อัปโหลดรูปโปรไฟล์ของตัวเอง แทนที่รูปเดิมแล้วลบไฟล์เก่าทิ้ง
+router.post('/me/avatar', protect, uploadAvatar, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ code: 'photo_invalid', message: 'No image uploaded' });
+    }
+    const user = await User.findByPk(req.user.id);
+    const oldUrl = user.avatarUrl;
+    user.avatarUrl = await saveAvatar(user.id, req.file.buffer);
+    await user.save();
+    if (oldUrl) deletePhotoFile(oldUrl);
+    logger.info(`User updated avatar: ${user.username}`);
+    res.json(user);
+  } catch (error) {
+    logger.error(`Upload avatar error: ${error.message}`);
+    sendServerError(res);
+  }
+});
+
+// ลบรูปโปรไฟล์ แล้วกลับไปแสดงตัวอักษรย่อของชื่อแทน
+router.delete('/me/avatar', protect, async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+    if (user.avatarUrl) {
+      deletePhotoFile(user.avatarUrl);
+      user.avatarUrl = null;
+      await user.save();
+    }
+    res.json(user);
+  } catch (error) {
+    logger.error(`Remove avatar error: ${error.message}`);
     sendServerError(res);
   }
 });

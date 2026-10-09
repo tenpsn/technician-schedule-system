@@ -10,6 +10,7 @@ const MAX_FILE_SIZE_BYTES = (parseInt(process.env.MAX_PHOTO_SIZE_MB, 10) || 10) 
 const MAX_FILES_PER_UPLOAD = 20;
 const MAX_PHOTO_WIDTH = 1600;
 const JPEG_QUALITY = 75;
+const AVATAR_SIZE = 256;
 
 const fileFilter = (req, file, cb) => {
   if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
@@ -41,6 +42,23 @@ const uploadPhotos = (req, res, next) => {
   });
 };
 
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 1 }
+}).single('avatar');
+
+// รูปโปรไฟล์รับทีละรูป ตอบ error รูปแบบเดียวกับ uploadPhotos
+const uploadAvatar = (req, res, next) => {
+  avatarUpload(req, res, (err) => {
+    if (err) {
+      const code = { LIMIT_FILE_SIZE: 'photo_too_large', PHOTO_TYPE_INVALID: 'photo_type_invalid' }[err.code] || 'photo_invalid';
+      return res.status(400).json({ code, data: { maxMb: MAX_FILE_SIZE_BYTES / 1024 / 1024 }, message: err.message });
+    }
+    next();
+  });
+};
+
 // ปรับขนาดความกว้างสูงสุดแล้วแปลงเป็น JPEG ให้รูปจากกล้องมือถือที่มักหนักหลาย MB เหลือขนาดเล็กลงมาก
 // ส่งออกเป็น jpg เสมอไม่ว่าไฟล์ต้นฉบับจะเป็นแบบไหน เพราะรูปหน้างานไม่ต้องใช้ความโปร่งใสของ PNG หรือ WebP และรูปแบบเดียวคุมการบีบอัดได้ง่ายกว่า
 const saveCompressedPhoto = async (orderId, buffer) => {
@@ -59,6 +77,21 @@ const saveCompressedPhoto = async (orderId, buffer) => {
   return `/uploads/work-orders/${orderId}/${filename}`;
 };
 
+// ครอปรูปโปรไฟล์เป็นสี่เหลี่ยมจัตุรัสขนาดเล็ก เพราะแสดงแค่ในกรอบเล็กๆ ไม่ต้องเก็บรูปใหญ่
+const saveAvatar = async (userId, buffer) => {
+  const dir = path.join(__dirname, '..', process.env.UPLOAD_DIR || 'uploads', 'avatars');
+  await fsp.mkdir(dir, { recursive: true });
+
+  const filename = `${userId}-${Date.now()}.jpg`;
+  await sharp(buffer)
+    .rotate()
+    .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: 'cover' })
+    .jpeg({ quality: 85 })
+    .toFile(path.join(dir, filename));
+
+  return `/uploads/avatars/${filename}`;
+};
+
 // photoUrl มีรูปแบบเป็น path ใต้ uploads ตามด้วยรหัสงานและชื่อไฟล์ ดู saveCompressedPhoto ด้านบน
 // ถ้าหาไฟล์ไม่เจอก็ไม่เป็นไร ไม่ควรบล็อกการลบ reference ของ order
 const deletePhotoFile = (photoUrl) => {
@@ -71,4 +104,4 @@ const deletePhotoFile = (photoUrl) => {
   });
 };
 
-module.exports = { uploadPhotos, saveCompressedPhoto, deletePhotoFile };
+module.exports = { uploadPhotos, saveCompressedPhoto, deletePhotoFile, uploadAvatar, saveAvatar };

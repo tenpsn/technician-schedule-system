@@ -5,6 +5,7 @@ import { ToastrService } from 'ngx-toastr';
 import { ContractService, Contract, MaVisit, MaCurrentRound } from '../../services/contract.service';
 import { HospitalService, Hospital } from '../../services/hospital.service';
 import { UserService } from '../../services/user.service';
+import { AuthService } from '../../services/auth.service';
 import { I18nService } from '../../services/i18n.service';
 import { SelectOption } from '../select/select.component';
 
@@ -382,6 +383,7 @@ export class ContractSettingsComponent implements OnInit {
     private contractService: ContractService,
     private hospitalService: HospitalService,
     private userService: UserService,
+    private auth: AuthService,
     private router: Router,
     public i18n: I18nService,
     private toastr: ToastrService,
@@ -414,7 +416,8 @@ export class ContractSettingsComponent implements OnInit {
       next: (users) => {
         this.technicianOptions = users.map(u => ({
           value: u._id,
-          label: u.role === 'technician' ? u.fullName : `${u.fullName} (${this.i18n.roleLabel(u.role)})`
+          label: u.role === 'technician' ? u.fullName : `${u.fullName} (${this.i18n.roleLabel(u.role)})`,
+          image: this.auth.resolveAvatarUrl(u.avatarUrl)
         }));
         this.cdr.detectChanges();
       },

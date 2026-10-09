@@ -52,9 +52,9 @@ import { I18nService } from '../../services/i18n.service';
                 <td class="mono">{{ order.srNumber }}</td>
                 <td>{{ order.customerName }}</td>
                 <td><span class="badge">{{ i18n.typeLabel(order.workType) }}</span></td>
-                <td>{{ order.technician?.fullName }}</td>
+                <td><span class="person"><img *ngIf="auth.resolveAvatarUrl(order.technician?.avatarUrl) as src" class="person-avatar" [src]="src" alt="">{{ order.technician?.fullName }}</span></td>
                 <td class="mono">{{ order.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}</td>
-                <td>{{ order.cancelledBy?.fullName }}</td>
+                <td><span class="person"><img *ngIf="auth.resolveAvatarUrl(order.cancelledBy?.avatarUrl) as src" class="person-avatar" [src]="src" alt="">{{ order.cancelledBy?.fullName }}</span></td>
                 <td class="mono">{{ order.cancelledAt | localDate:'dd/MM/yyyy HH:mm' }}</td>
                 <td class="reason-cell">{{ order.cancelReason }}</td>
               </tr>
@@ -105,6 +105,8 @@ import { I18nService } from '../../services/i18n.service';
     .data-table { width: 100%; min-width: 900px; border-collapse: collapse; }
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line2); font-size: 13px; }
+    .person { display: inline-flex; align-items: center; gap: 8px; }
+    .person-avatar { width: 24px; height: 24px; border-radius: 6px; object-fit: cover; flex: none; }
     .reason-cell { max-width: 260px; color: var(--sub); font-size: 12.5px; }
     .clickable { cursor: pointer; }
     .clickable:hover { background: var(--alt); }

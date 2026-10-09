@@ -22,6 +22,7 @@ export interface User {
   phone?: string;
   province?: string;
   region?: string | null;
+  avatarUrl?: string | null;
   active?: boolean;
   token?: string;
   isSupervisor?: boolean;
@@ -37,9 +38,9 @@ export class AuthService {
     if (saved) {
       const user = JSON.parse(saved);
       this.currentUserSubject.next(user);
-      // เซสชันเก่าไม่มี isSupervisor หรือ region ต้องขอข้อมูลสดมาเติม เลื่อนออกนอกคอนสตรักเตอร์
-      // กัน AuthInterceptor ที่ inject AuthService ชนกับตัวเองระหว่างยังสร้างไม่เสร็จ
-      if (user.isSupervisor === undefined || !('region' in user)) {
+      // ขอข้อมูลสดทุกครั้งที่เปิดแอป เพราะบทบาท เขต หรือรูปโปรไฟล์อาจถูกเปลี่ยนจากที่อื่นหลังล็อกอิน
+      // เลื่อนออกนอกคอนสตรักเตอร์ กัน AuthInterceptor ที่ inject AuthService ชนกับตัวเองระหว่างยังสร้างไม่เสร็จ
+      if (user.token && !this.isTokenExpired(user.token)) {
         Promise.resolve().then(() => this.refreshSupervisorFlag(user));
       }
     }
@@ -48,7 +49,7 @@ export class AuthService {
   private refreshSupervisorFlag(user: User): void {
     this.getMe().subscribe({
       next: (fresh) => {
-        const merged: User = { ...user, role: fresh.role, isSupervisor: fresh.isSupervisor, region: fresh.region ?? null };
+        const merged: User = { ...user, role: fresh.role, isSupervisor: fresh.isSupervisor, region: fresh.region ?? null, avatarUrl: fresh.avatarUrl ?? null };
         localStorage.setItem('currentUser', JSON.stringify(merged));
         this.currentUserSubject.next(merged);
       },
@@ -87,6 +88,40 @@ export class AuthService {
         this.currentUserSubject.next(merged);
       })
     );
+  }
+
+  // ไม่ตั้ง Content Type เอง ให้ browser ใส่ multipart boundary ให้ เหมือน uploadPhotos ของใบงาน
+  uploadAvatar(file: File): Observable<User> {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const headers = { Authorization: `Bearer ${this.token}` };
+    return this.http.post<User>(`${environment.apiUrl}/auth/me/avatar`, formData, { headers }).pipe(
+      tap(updated => this.mergeAvatar(updated.avatarUrl ?? null))
+    );
+  }
+
+  removeAvatar(): Observable<User> {
+    const headers = { Authorization: `Bearer ${this.token}` };
+    return this.http.delete<User>(`${environment.apiUrl}/auth/me/avatar`, { headers }).pipe(
+      tap(() => this.mergeAvatar(null))
+    );
+  }
+
+  private mergeAvatar(avatarUrl: string | null): void {
+    const current = this.currentUserSubject.value;
+    if (!current) return;
+    const merged: User = { ...current, avatarUrl };
+    localStorage.setItem('currentUser', JSON.stringify(merged));
+    this.currentUserSubject.next(merged);
+  }
+
+  // avatarUrl เก็บเป็น path ใต้ uploads ต้องต่อหน้าด้วยโฮสต์ของ backend ก่อนใช้เป็น src
+  get avatarSrc(): string | null {
+    return this.resolveAvatarUrl(this.currentUser?.avatarUrl);
+  }
+
+  resolveAvatarUrl(url?: string | null): string | null {
+    return url ? environment.apiUrl.replace(/\/api\/?$/, '') + url : null;
   }
 
   get currentUser(): User | null {

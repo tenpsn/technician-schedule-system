@@ -65,7 +65,10 @@ interface TypeBreakdown {
               <tr *ngFor="let t of pagedTechnicians" class="tech-row" [class.selected]="selectedTechId === t._id" (click)="selectTech(t._id)">
                 <td>
                   <span class="tech-cell">
-                    <span class="tech-avatar" [style.background]="avatarColor(t.fullName)">{{ initials(t.fullName) }}</span>
+                    <span class="tech-avatar" [style.background]="avatarColor(t.fullName)">
+                      <img *ngIf="auth.resolveAvatarUrl(t.avatarUrl) as src; else rowInitials" [src]="src" alt="">
+                      <ng-template #rowInitials>{{ initials(t.fullName) }}</ng-template>
+                    </span>
                     {{ t.fullName }}
                   </span>
                 </td>
@@ -111,7 +114,10 @@ interface TypeBreakdown {
       <div class="card detail-card" *ngIf="!loading && detailTarget as tech">
         <div class="card-head">
           <div class="head-title tech-title">
-            <span class="tech-avatar lg" [style.background]="avatarColor(tech.fullName)">{{ initials(tech.fullName) }}</span>
+            <span class="tech-avatar lg" [style.background]="avatarColor(tech.fullName)">
+              <img *ngIf="auth.resolveAvatarUrl(tech.avatarUrl) as src; else detailInitials" [src]="src" alt="">
+              <ng-template #detailInitials>{{ initials(tech.fullName) }}</ng-template>
+            </span>
             {{ tech.fullName }}
             <span class="tech-role-tag" *ngIf="tech.role">{{ i18n.roleLabel(tech.role) }}</span>
           </div>
@@ -283,7 +289,8 @@ interface TypeBreakdown {
     .resched-note { font-size: 10.5px; color: var(--sub); font-weight: 400; white-space: nowrap; }
 
     .tech-cell { display: flex; align-items: center; gap: 10px; }
-    .tech-avatar { border-radius: 8px; width: 28px; height: 28px; flex: none; color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+    .tech-avatar { border-radius: 8px; width: 28px; height: 28px; flex: none; color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; overflow: hidden; }
+    .tech-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .tech-avatar.lg { width: 38px; height: 38px; font-size: 13px; }
     .tech-title { display: flex; align-items: center; gap: 12px; }
     .tech-role-tag { font-size: 11.5px; font-weight: 600; color: var(--sub); background: var(--alt); border: 1px solid var(--line2); border-radius: var(--radius); padding: 3px 9px; }
@@ -446,7 +453,7 @@ export class TechDashboardComponent implements OnInit {
   goNext() { this.goToPage(this.currentPage + 1); }
   goLast() { this.goToPage(this.totalPages); }
 
-  get detailTarget(): { _id: string; fullName: string; role: string } | null {
+  get detailTarget(): { _id: string; fullName: string; role: string; avatarUrl?: string | null } | null {
     if (this.selectedTechId === this.ALL_ID) {
       return { _id: this.ALL_ID, fullName: this.i18n.t['totalLabel'], role: '' };
     }

@@ -59,6 +59,7 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
           <table class="data-table">
             <thead>
               <tr>
+                <th class="avatar-col">{{ i18n.t['colAvatar'] }}</th>
                 <th>{{ i18n.t['colFullName'] }}</th>
                 <th>{{ i18n.t['colUsername'] }}</th>
                 <th>{{ i18n.t['colRole'] }}</th>
@@ -70,6 +71,12 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
             </thead>
             <tbody>
               <tr *ngFor="let u of pagedUsers" [class.inactive-row]="u.active === false">
+                <td class="avatar-col">
+                  <span class="user-avatar">
+                    <img *ngIf="auth.resolveAvatarUrl(u.avatarUrl) as src; else userInitials" [src]="src" alt="">
+                    <ng-template #userInitials>{{ initials(u.fullName) }}</ng-template>
+                  </span>
+                </td>
                 <td>{{ u.fullName }}</td>
                 <td class="muted mono">{{ u.username }}</td>
                 <td>
@@ -107,7 +114,7 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
                 </td>
               </tr>
               <tr *ngIf="filteredUsers.length === 0">
-                <td colspan="7" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="8" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
@@ -170,6 +177,9 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
     .data-table th { background: var(--alt); color: var(--sub); border-bottom: 2px solid var(--accent); text-align: left; padding: 11px 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; }
     .data-table td { padding: 10px 20px; border-bottom: 1px solid var(--line2); font-size: 13.5px; }
     .inactive-row { opacity: 0.6; }
+    .data-table .avatar-col { width: 1%; padding-right: 0; }
+    .user-avatar { border-radius: 8px; width: 34px; height: 34px; overflow: hidden; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+    .user-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .muted { color: var(--sub); }
     .actions-cell { padding-right: 20px; width: 1%; white-space: nowrap; }
     .actions-inner { display: flex; justify-content: flex-end; gap: 8px; }
@@ -316,6 +326,11 @@ export class UserSettingsComponent implements OnInit {
   goPrev() { this.goToPage(this.currentPage - 1); }
   goNext() { this.goToPage(this.currentPage + 1); }
   goLast() { this.goToPage(this.totalPages); }
+
+  initials(name?: string): string {
+    if (!name) return '';
+    return name.replace(/\s+/g, ' ').split(' ')[0].slice(0, 2);
+  }
 
   isSelf(u: User): boolean {
     return u._id === this.auth.currentUser?._id;

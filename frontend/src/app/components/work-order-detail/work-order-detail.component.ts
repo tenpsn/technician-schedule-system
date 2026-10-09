@@ -37,7 +37,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <div class="alert-muted" *ngIf="order.status === 'cancelled'">
             <div class="alert-title">✕ {{ i18n.t['cancelledInfo'] }}</div>
             <div class="meta-grid">
-              <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledBy'] }}</div><div class="meta-value">{{ order.cancelledBy?.fullName }}</div></div>
+              <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledBy'] }}</div><div class="meta-value person"><img *ngIf="auth.resolveAvatarUrl(order.cancelledBy?.avatarUrl) as src" class="person-avatar" [src]="src" alt="">{{ order.cancelledBy?.fullName }}</div></div>
               <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledAt'] }}</div><div class="meta-value">{{ order.cancelledAt | localDate:'dd/MM/yyyy HH:mm' }}</div></div>
             </div>
             <div class="reason-box">
@@ -50,7 +50,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="meta-item"><div class="meta-label">{{ i18n.t['customer'] }}</div><div class="meta-value">{{ order.customerName }}</div></div>
             <div class="meta-item"><div class="meta-label">{{ i18n.t['site'] }}</div><div class="meta-value">{{ order.customerLocation }}</div></div>
             <div class="meta-item"><div class="meta-label">{{ i18n.t['jobType'] }}</div><div class="meta-value">{{ i18n.typeLabel(order.workType) }}</div></div>
-            <div class="meta-item"><div class="meta-label">{{ i18n.t['owner'] }}</div><div class="meta-value">{{ order.technician?.fullName }}</div></div>
+            <div class="meta-item"><div class="meta-label">{{ i18n.t['owner'] }}</div><div class="meta-value person"><img *ngIf="auth.resolveAvatarUrl(order.technician?.avatarUrl) as src" class="person-avatar" [src]="src" alt="">{{ order.technician?.fullName }}</div></div>
           </div>
 
           <div class="section">
@@ -340,6 +340,8 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .meta-item { flex: 1 1 180px; min-width: 150px; }
     .meta-label { font-size: 12px; color: var(--sub); }
     .meta-value { font-size: 16px; font-weight: 600; margin-top: 3px; line-height: 1.4; }
+    .meta-value.person { display: flex; align-items: center; gap: 8px; }
+    .person-avatar { width: 26px; height: 26px; border-radius: 7px; object-fit: cover; flex: none; }
 
     .section { border-radius: var(--radius); background: var(--alt); border: 1px solid var(--line2); padding: 16px 18px; }
     .section-title { font-size: 13.5px; font-weight: 700; padding-left: 10px; border-left: 3px solid var(--accent); }

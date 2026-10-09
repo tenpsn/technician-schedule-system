@@ -49,7 +49,10 @@ const NOTIF_POLL_MS = 30000;
 
         <div class="user-menu-wrap">
           <button class="user-chip" (click)="toggleUserMenu()" [title]="i18n.t['myProfile']">
-            <div class="avatar">{{ initials(auth.currentUser?.fullName) }}</div>
+            <div class="avatar">
+              <img *ngIf="auth.avatarSrc; else chipInitials" [src]="auth.avatarSrc" alt="">
+              <ng-template #chipInitials>{{ initials(auth.currentUser?.fullName) }}</ng-template>
+            </div>
             <div class="user-meta">
               <div class="user-name">{{ auth.currentUser?.fullName }}</div>
               <div class="user-role">{{ i18n.roleLabel(auth.currentUser?.role || '') }}</div>
@@ -137,7 +140,10 @@ const NOTIF_POLL_MS = 30000;
           <div class="modal-title">{{ i18n.t['logoutTitle'] }}</div>
           <div class="modal-body">{{ i18n.t['logoutBody'] }}</div>
           <div class="modal-user">
-            <div class="avatar">{{ initials(auth.currentUser?.fullName) }}</div>
+            <div class="avatar">
+              <img *ngIf="auth.avatarSrc; else modalInitials" [src]="auth.avatarSrc" alt="">
+              <ng-template #modalInitials>{{ initials(auth.currentUser?.fullName) }}</ng-template>
+            </div>
             <div>
               <div class="user-name">{{ auth.currentUser?.fullName }}</div>
               <div class="user-role">{{ i18n.roleLabel(auth.currentUser?.role || '') }}</div>
@@ -277,8 +283,9 @@ const NOTIF_POLL_MS = 30000;
     .avatar {
       border-radius: 8px; width: 34px; height: 34px; flex: none;
       background: var(--accent); color: #fff; display: grid; place-items: center;
-      font-size: 12px; font-weight: 700;
+      font-size: 12px; font-weight: 700; overflow: hidden;
     }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .user-meta { min-width: 0; max-width: 140px; }
     .user-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .user-role { font-size: 11px; color: var(--chrome-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

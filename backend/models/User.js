@@ -35,6 +35,7 @@ const User = sequelize.define('User', {
   phone: DataTypes.STRING,
   province: DataTypes.STRING,
   region: DataTypes.STRING,
+  avatarUrl: DataTypes.STRING,
   active: {
     type: DataTypes.BOOLEAN,
     defaultValue: true

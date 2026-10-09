@@ -4,6 +4,8 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 export interface SelectOption {
   value: any;
   label: string;
+  // ลิงก์รูปเล็กที่แสดงหน้าข้อความ เช่น รูปโปรไฟล์ช่าง ไม่ใส่ก็แสดงแค่ข้อความ
+  image?: string | null;
 }
 
 @Component({
@@ -15,7 +17,10 @@ export interface SelectOption {
   template: `
     <div class="sel">
       <button type="button" class="sel-field" [class.compact]="compact" (click)="toggle()" [disabled]="disabled">
-        <span [class.placeholder]="!selectedLabel">{{ selectedLabel || placeholder }}</span>
+        <span class="sel-label" [class.placeholder]="!selectedLabel">
+          <img *ngIf="selectedImage" class="sel-img" [src]="selectedImage" alt="">
+          {{ selectedLabel || placeholder }}
+        </span>
         <span class="sel-arrow">▾</span>
       </button>
 
@@ -24,6 +29,7 @@ export interface SelectOption {
                 class="sel-opt"
                 [class.selected]="isSelected(opt)"
                 (click)="pick(opt); $event.stopPropagation()">
+          <img *ngIf="opt.image" class="sel-img" [src]="opt.image" alt="">
           {{ opt.label }}
         </button>
         <div *ngIf="options.length === 0" class="sel-empty">–</div>
@@ -56,6 +62,8 @@ export interface SelectOption {
     }
     .sel-opt:hover { background: var(--alt); }
     .sel-opt.selected { background: var(--accent); color: #fff; font-weight: 600; }
+    .sel-img { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; vertical-align: middle; margin-right: 8px; }
+    .sel-field.compact .sel-img { width: 18px; height: 18px; margin-right: 6px; }
     .sel-empty { padding: 10px; font-size: 12.5px; color: var(--sub); text-align: center; }
   `]
 })
@@ -101,6 +109,10 @@ export class SelectComponent implements ControlValueAccessor, OnDestroy {
   get selectedLabel(): string {
     const found = this.options.find(o => o.value === this.value);
     return found ? found.label : '';
+  }
+
+  get selectedImage(): string | null {
+    return this.options.find(o => o.value === this.value)?.image || null;
   }
 
   isSelected(opt: SelectOption): boolean {

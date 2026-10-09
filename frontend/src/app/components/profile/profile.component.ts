@@ -22,10 +22,19 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
         <form [formGroup]="form" (ngSubmit)="onSubmit()">
           <div class="card-body">
             <div class="identity-row">
-              <div class="avatar">{{ initials }}</div>
-              <div>
+              <button type="button" class="avatar" (click)="avatarInput.click()" [disabled]="avatarBusy" [title]="i18n.t['changeAvatar']">
+                <img *ngIf="auth.avatarSrc; else avatarInitials" [src]="auth.avatarSrc" alt="">
+                <ng-template #avatarInitials>{{ initials }}</ng-template>
+                <span class="avatar-overlay">{{ avatarBusy ? '…' : '📷' }}</span>
+              </button>
+              <input #avatarInput type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="onAvatarSelected($event)">
+              <div class="identity-info">
                 <div class="identity-name">{{ auth.currentUser?.fullName }}</div>
                 <div class="identity-sub mono">{{ auth.currentUser?.username }} · {{ i18n.roleLabel(auth.currentUser?.role || '') }}</div>
+                <div class="avatar-actions">
+                  <button type="button" class="btn-link" (click)="avatarInput.click()" [disabled]="avatarBusy">{{ i18n.t['changeAvatar'] }}</button>
+                  <button type="button" class="btn-link danger" *ngIf="auth.currentUser?.avatarUrl" (click)="removeAvatar()" [disabled]="avatarBusy">{{ i18n.t['removeAvatar'] }}</button>
+                </div>
               </div>
             </div>
 
@@ -93,7 +102,15 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
 
     .card-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
     .identity-row { display: flex; align-items: center; gap: 14px; }
-    .avatar { border-radius: 10px; width: 46px; height: 46px; flex: none; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 15px; font-weight: 700; }
+    .avatar { position: relative; overflow: hidden; border-radius: 14px; width: 72px; height: 72px; flex: none; padding: 0; border: none; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 20px; font-weight: 700; font-family: inherit; cursor: pointer; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .avatar-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); font-size: 20px; opacity: 0; transition: opacity .15s; }
+    .avatar:hover .avatar-overlay, .avatar:disabled .avatar-overlay { opacity: 1; }
+    .identity-info { min-width: 0; }
+    .avatar-actions { display: flex; gap: 14px; margin-top: 6px; }
+    .btn-link { padding: 0; border: none; background: none; color: var(--accent); font-size: 12.5px; font-weight: 600; font-family: inherit; cursor: pointer; }
+    .btn-link.danger { color: var(--danger-text); }
+    .btn-link:disabled { opacity: 0.6; cursor: not-allowed; }
     .identity-name { font-size: 16px; font-weight: 700; }
     .identity-sub { font-size: 12px; color: var(--sub); margin-top: 2px; }
 
@@ -122,6 +139,7 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
 export class ProfileComponent implements OnInit {
   form: FormGroup;
   saving = false;
+  avatarBusy = false;
   regionMap: Record<string, string> = {};
 
   constructor(
@@ -226,6 +244,44 @@ export class ProfileComponent implements OnInit {
       },
       error: (err) => {
         this.saving = false;
+        this.toastr.error(this.i18n.errorMessage(err));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  // รูปโปรไฟล์บันทึกทันทีที่เลือกไฟล์ ไม่ต้องรอกดปุ่มบันทึกของฟอร์ม
+  onAvatarSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    this.avatarBusy = true;
+    this.auth.uploadAvatar(file).subscribe({
+      next: () => {
+        this.avatarBusy = false;
+        this.toastr.success(this.i18n.t['toastAvatarUpdated']);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.avatarBusy = false;
+        this.toastr.error(this.i18n.errorMessage(err));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  removeAvatar() {
+    this.avatarBusy = true;
+    this.auth.removeAvatar().subscribe({
+      next: () => {
+        this.avatarBusy = false;
+        this.toastr.success(this.i18n.t['toastAvatarRemoved']);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.avatarBusy = false;
         this.toastr.error(this.i18n.errorMessage(err));
         this.cdr.detectChanges();
       }

@@ -83,7 +83,10 @@ import { Router } from '@angular/router';
               <button class="link-btn" (click)="clearFilters()">{{ i18n.t['clearFilter'] }}</button>
             </div>
             <button *ngFor="let t of technicians" class="tech-row" [class.on]="filterTech === t._id" (click)="toggleTechFilter(t._id)">
-              <span class="tech-avatar" [style.background]="filterTech === t._id ? null : avatarColor(t.fullName)">{{ initials(t.fullName) }}</span>
+              <span class="tech-avatar" [style.background]="filterTech === t._id ? null : avatarColor(t.fullName)">
+                <img *ngIf="auth.resolveAvatarUrl(t.avatarUrl) as src; else listInitials" [src]="src" alt="">
+                <ng-template #listInitials>{{ initials(t.fullName) }}</ng-template>
+              </span>
               <span class="tech-meta">
                 <span class="tech-name">{{ t.fullName }}</span>
                 <span class="tech-role">{{ i18n.roleLabel(t.role) }}</span>
@@ -107,7 +110,10 @@ import { Router } from '@angular/router';
                 <span class="mono">{{ o.plannedDate | localDate:'d MMM':'UTC' }}</span>
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
-              <div class="queue-sub">{{ i18n.typeLabel(o.workType) }} · {{ o.technician?.fullName }}</div>
+              <div class="queue-sub">{{ i18n.typeLabel(o.workType) }} ·
+                <img *ngIf="auth.resolveAvatarUrl(o.technician?.avatarUrl) as src; else queueName" class="mini-avatar" [src]="src" [title]="o.technician?.fullName" alt="">
+                <ng-template #queueName>{{ o.technician?.fullName }}</ng-template>
+              </div>
               <div class="queue-window mono">{{ timeWindow(o) }}</div>
             </div>
             <div *ngIf="pendingApproval.length === 0" class="empty-note">{{ i18n.t['noPendingJobs'] }}</div>
@@ -184,7 +190,10 @@ import { Router } from '@angular/router';
                    (click)="viewOrder(order._id); $event.stopPropagation()">
                 <div class="chip-sr mono">{{ order.srNumber }}</div>
                 <div class="chip-title">{{ order.customerName }}</div>
-                <div class="chip-sub">{{ i18n.typeLabel(order.workType) }}<span *ngIf="showAll"> · {{ order.technician?.fullName }}</span></div>
+                <div class="chip-sub">{{ i18n.typeLabel(order.workType) }}<span *ngIf="showAll"> ·
+                  <img *ngIf="auth.resolveAvatarUrl(order.technician?.avatarUrl) as src; else chipName" class="mini-avatar" [src]="src" [title]="order.technician?.fullName" alt="">
+                  <ng-template #chipName>{{ order.technician?.fullName }}</ng-template>
+                </span></div>
               </div>
             </div>
           </div>
@@ -201,7 +210,10 @@ import { Router } from '@angular/router';
                   <div class="card-top mono"><span>{{ timeWindow(order) }}</span><span>{{ i18n.statusLabel(order.status) }}</span></div>
                   <div class="card-title">{{ order.customerName }}</div>
                   <div class="card-sub">{{ i18n.typeLabel(order.workType) }} · {{ order.srNumber }}</div>
-                  <div class="card-tech" *ngIf="showAll">{{ order.technician?.fullName }}</div>
+                  <div class="card-tech" *ngIf="showAll">
+                    <img *ngIf="auth.resolveAvatarUrl(order.technician?.avatarUrl) as src; else cardName" class="mini-avatar" [src]="src" [title]="order.technician?.fullName" alt="">
+                    <ng-template #cardName>{{ order.technician?.fullName }}</ng-template>
+                  </div>
                 </div>
               </div>
             </div>
@@ -218,7 +230,10 @@ import { Router } from '@angular/router';
               </div>
               <div class="day-row" *ngFor="let row of dayRows">
                 <div class="tech-col">
-                  <span class="tech-avatar" [style.background]="avatarColor(row.name)">{{ initials(row.name) }}</span>
+                  <span class="tech-avatar" [style.background]="avatarColor(row.name)">
+                    <img *ngIf="auth.resolveAvatarUrl(row.avatarUrl) as src; else rowInitials" [src]="src" alt="">
+                    <ng-template #rowInitials>{{ initials(row.name) }}</ng-template>
+                  </span>
                   <span class="tech-meta">
                     <span class="tech-name">{{ row.name }}</span>
                     <span class="tech-role mono" *ngIf="row.hoursLabel">{{ row.hoursLabel }}</span>
@@ -325,7 +340,8 @@ import { Router } from '@angular/router';
     }
     .tech-row.on { border-color: var(--accent); background: var(--info-bg); }
     .tech-row:hover { border-color: var(--accent); }
-    .tech-avatar { border-radius: 8px; width: 28px; height: 28px; flex: none; background: var(--avatar); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+    .tech-avatar { border-radius: 8px; width: 28px; height: 28px; flex: none; background: var(--avatar); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; overflow: hidden; }
+    .tech-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .tech-row.on .tech-avatar { background: var(--accent); }
     .tech-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .tech-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
@@ -354,6 +370,7 @@ import { Router } from '@angular/router';
     .chip-sr { font-size: 10.5px; color: var(--sub); }
     .chip-title { font-size: 12px; font-weight: 600; line-height: 1.3; margin-top: 2px; }
     .chip-sub { font-size: 11px; color: var(--sub); margin-top: 2px; }
+    .mini-avatar { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; vertical-align: middle; }
 
     .week-view { display: flex; align-items: stretch; min-width: 1040px; height: 100%; }
     .week-col { flex: 1; min-width: 148px; border-right: 1px solid var(--line2); display: flex; flex-direction: column; }
@@ -730,7 +747,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
       const rows = source.map(t => {
         const orders = ordersOnDate.filter(o => this.techIdOf(o) === t._id);
         const hrs = orders.reduce((a, o) => a + this.durationOf(o), 0);
-        return { techId: t._id, name: t.fullName, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders };
+        return { techId: t._id, name: t.fullName, avatarUrl: t.avatarUrl as string | null | undefined, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders };
       });
       // งานอาจถูกมอบหมายให้ supervisor หรือ admin เอง ซึ่งไม่อยู่ในรายชื่อช่าง
       // เลยเพิ่มแถวให้ผู้รับงานคนอื่นๆ ด้วย กันไม่ให้งานหายไปเงียบๆ
@@ -743,13 +760,13 @@ export class CalendarComponent implements OnInit, OnDestroy {
           const orders = ordersOnDate.filter(o => this.techIdOf(o) === id);
           const hrs = orders.reduce((a, o) => a + this.durationOf(o), 0);
           const name = orders[0]?.technician?.fullName || id;
-          rows.push({ techId: id, name, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders });
+          rows.push({ techId: id, name, avatarUrl: orders[0]?.technician?.avatarUrl, hoursLabel: hrs ? `${hrs} ${this.i18n.t['hoursUnit']}` : '', orders });
         }
       }
       return rows;
     }
     const me = this.auth.currentUser;
-    return me ? [{ techId: me._id, name: me.fullName, hoursLabel: '', orders: ordersOnDate }] : [];
+    return me ? [{ techId: me._id, name: me.fullName, avatarUrl: me.avatarUrl, hoursLabel: '', orders: ordersOnDate }] : [];
   }
 
   blockLeft(order: WorkOrder): string {

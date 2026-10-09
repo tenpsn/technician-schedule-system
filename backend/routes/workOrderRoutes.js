@@ -14,8 +14,8 @@ const logger = require('../config/logger');
 
 const router = express.Router();
 
-const TECHNICIAN_ATTRS = ['id', 'fullName', 'username'];
-const APPROVER_ATTRS = ['id', 'fullName'];
+const TECHNICIAN_ATTRS = ['id', 'fullName', 'username', 'avatarUrl'];
+const APPROVER_ATTRS = ['id', 'fullName', 'avatarUrl'];
 
 const DETAIL_INCLUDE = [
   // region ต้องมีไว้เช็คสิทธิ์ของหัวหน้าช่างภาคใต้ ดู isBlockedByRegion
