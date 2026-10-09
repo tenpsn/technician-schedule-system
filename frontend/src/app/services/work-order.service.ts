@@ -22,6 +22,8 @@ export interface ActualLogEntry {
   repairIncompleteReason?: string;
   installationDelivered?: boolean;
   recordedAt: string;
+  recordedById?: string | null;
+  recordedByName?: string | null;
 }
 
 export interface RescheduleHistoryEntry {
@@ -37,6 +39,8 @@ export interface WorkOrder {
   _id: string;
   srNumber: string;
   technician: any;
+  // รูปโปรไฟล์ของคนในประวัติอนุมัติ เลื่อน และบันทึกผล คีย์เป็น id ผู้ใช้
+  people?: Record<string, { fullName: string; avatarUrl?: string | null }>;
   customerName: string;
   customerLocation: string;
   workType: string;

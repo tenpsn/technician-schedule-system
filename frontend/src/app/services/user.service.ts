@@ -22,6 +22,7 @@ export interface UpdateUserPayload {
   phone?: string;
   province?: string;
   active?: boolean;
+  reason?: string;
   password?: string;
 }
 

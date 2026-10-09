@@ -11,7 +11,7 @@ import { AuditLogComponent } from './components/audit-log/audit-log.component';
 import { ContractSettingsComponent } from './components/contract-settings/contract-settings.component';
 import { UserSettingsComponent } from './components/user-settings/user-settings.component';
 import { ProfileComponent } from './components/profile/profile.component';
-import { authGuard } from './guards/auth.guard';
+import { authGuard, adminGuard } from './guards/auth.guard';
 
 const routes: Routes = [
   { path: '', redirectTo: '/calendar', pathMatch: 'full' },
@@ -23,8 +23,8 @@ const routes: Routes = [
   { path: 'dashboard', component: TechDashboardComponent, canActivate: [authGuard] },
   { path: 'settings/hospitals', component: HospitalSettingsComponent, canActivate: [authGuard] },
   { path: 'settings/contracts', component: ContractSettingsComponent, canActivate: [authGuard] },
-  { path: 'settings/history', component: AuditLogComponent, canActivate: [authGuard] },
-  { path: 'settings/users', component: UserSettingsComponent, canActivate: [authGuard] },
+  { path: 'settings/history', component: AuditLogComponent, canActivate: [adminGuard] },
+  { path: 'settings/users', component: UserSettingsComponent, canActivate: [adminGuard] },
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard] }
 ];
 

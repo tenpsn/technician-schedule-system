@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
@@ -124,7 +124,8 @@ export class LoginComponent {
     private toastr: ToastrService,
     private router: Router,
     public theme: ThemeService,
-    public i18n: I18nService
+    public i18n: I18nService,
+    private cdr: ChangeDetectorRef
   ) {
     this.form = this.fb.group({
       username: ['', Validators.required],
@@ -146,6 +147,7 @@ export class LoginComponent {
       error: (err) => {
         this.toastr.error(this.buildLoginErrorMessage(err));
         this.loading = false;
+        this.cdr.detectChanges();
       }
     });
   }

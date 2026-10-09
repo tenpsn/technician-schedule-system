@@ -24,6 +24,19 @@ const DETAIL_INCLUDE = [
   { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
 ];
 
+// ประวัติอนุมัติ เลื่อน และบันทึกผลเป็น JSONB เก็บแค่ id กับชื่อ ต้องดึงรูปโปรไฟล์แยกมาแนบไว้ใน people
+const withPeople = async (order) => {
+  const ids = new Set([
+    ...(order.approvalHistory || []).map((a) => a.approvedById),
+    ...(order.rescheduleHistory || []).map((h) => h.changedBy),
+    ...(order.actualLog || []).map((l) => l.recordedById)
+  ].filter(Boolean));
+  const users = ids.size ? await User.findAll({ where: { id: [...ids] }, attributes: APPROVER_ATTRS }) : [];
+  const json = order.toJSON();
+  json.people = Object.fromEntries(users.map((u) => [u.id, { fullName: u.fullName, avatarUrl: u.avatarUrl }]));
+  return json;
+};
+
 // หัวหน้าภาคใต้ได้รายการแค่งานของช่างภาคใต้ ใส่ where ที่ include ทำให้เป็น inner join ตัดงานภาคอื่นทิ้งตั้งแต่ query
 const technicianInclude = (user, attributes) => (isRegionRestricted(user)
   ? { model: User, as: 'technician', attributes, where: { region: RESTRICTED_SUPERVISOR_REGION } }
@@ -147,7 +160,7 @@ router.get('/:id', protect, async (req, res) => {
       return res.status(403).json({ code: 'not_authorized_view_order', message: 'Not authorized to view this order' });
     }
 
-    res.json(order);
+    res.json(await withPeople(order));
   } catch (error) {
     logger.error(`Get order error: ${error.message}`);
     sendServerError(res);
@@ -171,7 +184,7 @@ router.patch('/:id/approve', protect, authorize('supervisor', 'admin'), async (r
     });
     await order.reload({ include: DETAIL_INCLUDE });
 
-    res.json(order);
+    res.json(await withPeople(order));
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
@@ -209,7 +222,7 @@ router.patch('/:id/actual', protect, async (req, res) => {
       recordedById: req.user.id, recordedByName: req.user.fullName, actorLabel: req.user.username
     });
 
-    res.json(order);
+    res.json(await withPeople(order));
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
@@ -254,7 +267,7 @@ router.patch('/:id/photos', protect, uploadPhotos, async (req, res) => {
 
     await addPhotos(order, urls, req.user.username);
 
-    res.json(order);
+    res.json(await withPeople(order));
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
@@ -289,7 +302,7 @@ router.delete('/:id/photos', protect, async (req, res) => {
     await removePhoto(order, photo, req.user.username);
     deletePhotoFile(photo);
 
-    res.json(order);
+    res.json(await withPeople(order));
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
@@ -328,7 +341,7 @@ router.patch('/:id/reschedule', protect, async (req, res) => {
       newDate, reason, changedById: req.user.id, changedByName: req.user.fullName, actorLabel: req.user.username
     });
 
-    res.json(order);
+    res.json(await withPeople(order));
   } catch (error) {
     logger.error(`Reschedule error: ${error.message}`);
     sendServerError(res);
@@ -371,7 +384,7 @@ router.patch('/:id/cancel', protect, async (req, res) => {
       success: true,
       code: 'work_order_cancelled',
       message: 'Cancelled successfully',
-      order
+      order: await withPeople(order)
     });
   } catch (error) {
     if (error.statusCode) {

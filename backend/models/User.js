@@ -40,6 +40,13 @@ const User = sequelize.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
+  // เหตุผล เวลา และชื่อแอดมินที่ปิดหรือเปิดใช้งานบัญชีรอบล่าสุด ชุดหนึ่งถูกล้างเมื่ออีกชุดถูกบันทึก
+  deactivatedReason: DataTypes.TEXT,
+  deactivatedAt: DataTypes.DATE,
+  deactivatedBy: DataTypes.STRING,
+  reactivatedReason: DataTypes.TEXT,
+  reactivatedAt: DataTypes.DATE,
+  reactivatedBy: DataTypes.STRING,
   lineUserId: {
     type: DataTypes.STRING,
     unique: true

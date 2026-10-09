@@ -24,6 +24,12 @@ export interface User {
   region?: string | null;
   avatarUrl?: string | null;
   active?: boolean;
+  deactivatedReason?: string | null;
+  deactivatedAt?: string | null;
+  deactivatedBy?: string | null;
+  reactivatedReason?: string | null;
+  reactivatedAt?: string | null;
+  reactivatedBy?: string | null;
   token?: string;
   isSupervisor?: boolean;
 }

@@ -109,6 +109,16 @@ describe('Southern supervisor region restriction', () => {
     expect(res.status).toBe(200);
   });
 
+  test('work order detail includes profile photos of people in the approval history', async () => {
+    await User.update({ avatarUrl: '/uploads/avatars/southsup.jpg' }, { where: { id: southSupId } });
+    const res = await request(app)
+      .get(`/api/work-orders/${southOrderId}`)
+      .set('Authorization', `Bearer ${southTechToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.approvalHistory[0].approvedById).toBe(southSupId);
+    expect(res.body.people[southSupId]).toEqual({ fullName: 'South Sup', avatarUrl: '/uploads/avatars/southsup.jpg' });
+  });
+
   test('southern supervisor is blocked from every action on a non-southern job', async () => {
     const auth = { Authorization: `Bearer ${southSupToken}` };
     const base = `/api/work-orders/${northOrderId}`;

@@ -1,4 +1,5 @@
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { Observable, concatMap, of } from 'rxjs';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
 import { AuthService } from '../../services/auth.service';
@@ -22,19 +23,21 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
         <form [formGroup]="form" (ngSubmit)="onSubmit()">
           <div class="card-body">
             <div class="identity-row">
-              <button type="button" class="avatar" (click)="avatarInput.click()" [disabled]="avatarBusy" [title]="i18n.t['changeAvatar']">
-                <img *ngIf="auth.avatarSrc; else avatarInitials" [src]="auth.avatarSrc" alt="">
+              <button type="button" class="avatar" (click)="avatarInput.click()" [disabled]="saving" [title]="i18n.t['changeAvatar']">
+                <img *ngIf="avatarPreview; else avatarInitials" [src]="avatarPreview" alt="">
                 <ng-template #avatarInitials>{{ initials }}</ng-template>
-                <span class="avatar-overlay">{{ avatarBusy ? '…' : '📷' }}</span>
+                <span class="avatar-overlay">📷</span>
               </button>
               <input #avatarInput type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="onAvatarSelected($event)">
               <div class="identity-info">
                 <div class="identity-name">{{ auth.currentUser?.fullName }}</div>
                 <div class="identity-sub mono">{{ auth.currentUser?.username }} · {{ i18n.roleLabel(auth.currentUser?.role || '') }}</div>
                 <div class="avatar-actions">
-                  <button type="button" class="btn-link" (click)="avatarInput.click()" [disabled]="avatarBusy">{{ i18n.t['changeAvatar'] }}</button>
-                  <button type="button" class="btn-link danger" *ngIf="auth.currentUser?.avatarUrl" (click)="removeAvatar()" [disabled]="avatarBusy">{{ i18n.t['removeAvatar'] }}</button>
+                  <button type="button" class="btn-link" (click)="avatarInput.click()" [disabled]="saving">{{ i18n.t['changeAvatar'] }}</button>
+                  <button type="button" class="btn-link danger" *ngIf="avatarPreview" (click)="removeAvatar()" [disabled]="saving">{{ i18n.t['removeAvatar'] }}</button>
+                  <button type="button" class="btn-link muted" *ngIf="avatarChanged" (click)="undoAvatar()" [disabled]="saving">{{ i18n.t['undoAvatar'] }}</button>
                 </div>
+                <div class="avatar-pending" *ngIf="avatarChanged">{{ i18n.t['avatarPendingHint'] }}</div>
               </div>
             </div>
 
@@ -110,6 +113,8 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
     .avatar-actions { display: flex; gap: 14px; margin-top: 6px; }
     .btn-link { padding: 0; border: none; background: none; color: var(--accent); font-size: 12.5px; font-weight: 600; font-family: inherit; cursor: pointer; }
     .btn-link.danger { color: var(--danger-text); }
+    .btn-link.muted { color: var(--sub); }
+    .avatar-pending { font-size: 11.5px; color: var(--warn-text); margin-top: 4px; }
     .btn-link:disabled { opacity: 0.6; cursor: not-allowed; }
     .identity-name { font-size: 16px; font-weight: 700; }
     .identity-sub { font-size: 12px; color: var(--sub); margin-top: 2px; }
@@ -136,10 +141,11 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
     }
   `]
 })
-export class ProfileComponent implements OnInit {
+export class ProfileComponent implements OnInit, OnDestroy {
   form: FormGroup;
   saving = false;
-  avatarBusy = false;
+  pendingAvatar: { file: File; url: string } | null = null;
+  avatarRemoved = false;
   regionMap: Record<string, string> = {};
 
   constructor(
@@ -234,10 +240,16 @@ export class ProfileComponent implements OnInit {
       payload.currentPassword = currentPassword;
     }
 
+    // บันทึกข้อมูลในฟอร์มก่อน แล้วค่อยอัปโหลดหรือลบรูปที่เลือกค้างไว้
+    const avatarStep: Observable<unknown> = this.pendingAvatar
+      ? this.auth.uploadAvatar(this.pendingAvatar.file)
+      : this.avatarRemoved ? this.auth.removeAvatar() : of(null);
+
     this.saving = true;
-    this.auth.updateProfile(payload).subscribe({
+    this.auth.updateProfile(payload).pipe(concatMap(() => avatarStep)).subscribe({
       next: () => {
         this.saving = false;
+        this.clearPendingAvatar();
         this.toastr.success(this.i18n.t['toastProfileUpdated']);
         this.form.patchValue({ currentPassword: '', newPassword: '' });
         this.cdr.detectChanges();
@@ -250,42 +262,44 @@ export class ProfileComponent implements OnInit {
     });
   }
 
-  // รูปโปรไฟล์บันทึกทันทีที่เลือกไฟล์ ไม่ต้องรอกดปุ่มบันทึกของฟอร์ม
+  // รูปที่เลือกแสดงเป็นตัวอย่างไว้ก่อน ยังไม่บันทึกจนกว่าจะกดปุ่มบันทึกของฟอร์ม
+  get avatarPreview(): string | null {
+    if (this.pendingAvatar) return this.pendingAvatar.url;
+    return this.avatarRemoved ? null : this.auth.avatarSrc;
+  }
+
+  get avatarChanged(): boolean {
+    return !!this.pendingAvatar || this.avatarRemoved;
+  }
+
   onAvatarSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
 
-    this.avatarBusy = true;
-    this.auth.uploadAvatar(file).subscribe({
-      next: () => {
-        this.avatarBusy = false;
-        this.toastr.success(this.i18n.t['toastAvatarUpdated']);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.avatarBusy = false;
-        this.toastr.error(this.i18n.errorMessage(err));
-        this.cdr.detectChanges();
-      }
-    });
+    this.clearPendingAvatar();
+    this.pendingAvatar = { file, url: URL.createObjectURL(file) };
   }
 
   removeAvatar() {
-    this.avatarBusy = true;
-    this.auth.removeAvatar().subscribe({
-      next: () => {
-        this.avatarBusy = false;
-        this.toastr.success(this.i18n.t['toastAvatarRemoved']);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.avatarBusy = false;
-        this.toastr.error(this.i18n.errorMessage(err));
-        this.cdr.detectChanges();
-      }
-    });
+    this.clearPendingAvatar();
+    // ถ้ายังไม่เคยมีรูปบน server การลบแค่ยกเลิกรูปที่เพิ่งเลือก ไม่ต้องเรียกลบอะไร
+    this.avatarRemoved = !!this.auth.currentUser?.avatarUrl;
+  }
+
+  undoAvatar() {
+    this.clearPendingAvatar();
+  }
+
+  private clearPendingAvatar() {
+    if (this.pendingAvatar) URL.revokeObjectURL(this.pendingAvatar.url);
+    this.pendingAvatar = null;
+    this.avatarRemoved = false;
+  }
+
+  ngOnDestroy() {
+    this.clearPendingAvatar();
   }
 
   back() {

@@ -16,7 +16,10 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
       <div class="card">
         <div class="card-head">
           <div class="head-title">{{ i18n.t['userSettings'] }}</div>
-          <button (click)="back()" class="btn-ghost">← {{ i18n.t['back'] }}</button>
+          <div class="head-actions">
+            <a routerLink="/settings/history" class="btn-ghost btn-link">{{ i18n.t['auditHistory'] }}</a>
+            <button (click)="back()" class="btn-ghost">← {{ i18n.t['back'] }}</button>
+          </div>
         </div>
 
         <form class="add-bar" [formGroup]="form" (ngSubmit)="onSubmit()">
@@ -136,8 +139,12 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
         <div class="modal-card">
           <div class="modal-title">{{ toggleTarget.next ? i18n.t['confirmActivate'] : i18n.t['confirmDeactivate'] }}</div>
           <div class="modal-body"><strong>{{ toggleTarget.user.fullName }}</strong> · {{ toggleTarget.user.username }}</div>
+          <label class="field reason-field">
+            <span>{{ toggleTarget.next ? i18n.t['activateReason'] : i18n.t['deactivateReason'] }} *</span>
+            <textarea [(ngModel)]="toggleReason" rows="3" maxlength="500" [placeholder]="toggleTarget.next ? i18n.t['activateReasonPh'] : i18n.t['deactivateReasonPh']"></textarea>
+          </label>
           <div class="modal-actions">
-            <button (click)="doToggle()" [class.btn-activate-solid]="toggleTarget.next" [class.btn-delete-solid]="!toggleTarget.next">
+            <button (click)="doToggle()" [disabled]="toggling || !toggleReason.trim()" [class.btn-activate-solid]="toggleTarget.next" [class.btn-delete-solid]="!toggleTarget.next">
               {{ toggleTarget.next ? i18n.t['activate'] : i18n.t['deactivate'] }}
             </button>
             <button (click)="toggleTarget = null" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
@@ -153,6 +160,8 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
     .head-title { font-size: 18px; font-weight: 700; }
     .btn-ghost { border-radius: var(--radius); height: 40px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; }
     .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .head-actions { display: flex; gap: 8px; }
+    .btn-link { display: inline-flex; align-items: center; text-decoration: none; }
 
     .add-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 18px 20px; background: var(--alt); border-bottom: 1px solid var(--line2); }
     .field { flex: 1 1 200px; display: flex; flex-direction: column; gap: 6px; }
@@ -225,6 +234,10 @@ import { getProvinceOptions, getProvinceLabel, getRegionLabel } from '../../cons
     .btn-delete-solid:hover { filter: brightness(1.05); }
     .btn-activate-solid { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
     .btn-activate-solid:hover { background: var(--accent-hover); }
+    .modal-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .reason-field { margin-top: 16px; }
+    .reason-field textarea { border-radius: var(--radius); padding: 11px 12px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 14px; font-family: inherit; outline: none; resize: vertical; }
+    .reason-field textarea:focus { border-color: var(--accent); }
 
     @media (max-width: 768px) {
       .add-bar { flex-direction: column; align-items: stretch; }
@@ -242,6 +255,8 @@ export class UserSettingsComponent implements OnInit {
   pageSize = 10;
   currentPage = 1;
   toggleTarget: { user: User; next: boolean } | null = null;
+  toggleReason = '';
+  toggling = false;
   editingId: string | null = null;
   savingEdit = false;
   draft: { role: User['role']; province: string } = { role: 'technician', province: '' };
@@ -408,23 +423,35 @@ export class UserSettingsComponent implements OnInit {
       this.toastr.warning(this.i18n.t['cannotDeactivateSelf']);
       return;
     }
+    this.toggleReason = '';
     this.toggleTarget = { user: u, next };
   }
 
   doToggle() {
     if (!this.toggleTarget) return;
     const { user, next } = this.toggleTarget;
+    const reason = this.toggleReason.trim();
+    if (!reason) return;
 
-    this.userService.updateUser(user._id, { active: next }).subscribe({
+    this.toggling = true;
+    this.userService.updateUser(user._id, { active: next, reason }).subscribe({
       next: (updated) => {
         user.active = updated.active;
+        user.deactivatedReason = updated.deactivatedReason;
+        user.deactivatedAt = updated.deactivatedAt;
+        user.deactivatedBy = updated.deactivatedBy;
+        user.reactivatedReason = updated.reactivatedReason;
+        user.reactivatedAt = updated.reactivatedAt;
+        user.reactivatedBy = updated.reactivatedBy;
         this.toastr.success(this.i18n.t['toastUserUpdated']);
         this.toggleTarget = null;
+        this.toggling = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.toastr.error(this.i18n.errorMessage(err));
         this.toggleTarget = null;
+        this.toggling = false;
         this.cdr.detectChanges();
       }
     });

@@ -13,11 +13,13 @@ export interface AuditChange {
 
 export interface AuditLog {
   _id: string;
-  entityType: 'hospital' | 'contract';
+  entityType: 'hospital' | 'contract' | 'user';
   entityLabel: string;
-  action: 'create' | 'update' | 'delete';
+  action: 'create' | 'update' | 'delete' | 'activate' | 'deactivate';
   changes: AuditChange[];
   actorName: string | null;
+  actor?: { avatarUrl?: string | null } | null;
+  subjectUser?: { avatarUrl?: string | null } | null;
   createdAt: string;
 }
 

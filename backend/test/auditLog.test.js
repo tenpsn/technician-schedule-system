@@ -3,7 +3,7 @@ const app = require('../server');
 const { sequelize } = require('../config/database');
 const User = require('../models/User');
 
-let supToken, techToken, techId;
+let supToken, adminToken, techToken, techId;
 
 const login = async (username) => {
   const res = await request(app).post('/api/auth/login').send({ username, password: 'test123' });
@@ -11,7 +11,7 @@ const login = async (username) => {
 };
 
 const history = async (query = '') => {
-  const res = await request(app).get(`/api/audit-logs${query}`).set('Authorization', `Bearer ${supToken}`);
+  const res = await request(app).get(`/api/audit-logs${query}`).set('Authorization', `Bearer ${adminToken}`);
   return res.body;
 };
 
@@ -20,9 +20,11 @@ beforeAll(async () => {
   const bcrypt = require('bcryptjs');
   const password = await bcrypt.hash('test123', await bcrypt.genSalt(10));
   await User.create({ username: 'audit_sup', password, fullName: 'Audit Sup', role: 'supervisor' });
+  await User.create({ username: 'audit_admin', password, fullName: 'Audit Admin', role: 'admin' });
   techId = (await User.create({ username: 'audit_tech', password, fullName: 'Audit Tech', role: 'technician' })).id;
   supToken = await login('audit_sup');
   techToken = await login('audit_tech');
+  adminToken = await login('audit_admin');
 });
 
 afterAll(async () => {
@@ -83,7 +85,9 @@ describe('Audit log for hospitals and contracts', () => {
     expect((await history('?search=Audit Sup')).total).toBe(8);
   });
 
-  test('technicians cannot read the history', async () => {
+  test('only admins can read the history', async () => {
+    const sup = await request(app).get('/api/audit-logs').set('Authorization', `Bearer ${supToken}`);
+    expect(sup.status).toBe(403);
     const res = await request(app).get('/api/audit-logs').set('Authorization', `Bearer ${techToken}`);
     expect(res.status).toBe(403);
   });

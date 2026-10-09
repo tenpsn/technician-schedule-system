@@ -87,7 +87,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
                   <span class="field-value">{{ log.installationDelivered ? i18n.t['deliveredYes'] : i18n.t['deliveredNo'] }}</span>
                 </div>
               </div>
-              <div class="history-by">{{ i18n.t['byWord'] }}: {{ recordedByName(log) }}<ng-container *ngIf="log.recordedAt"> · {{ log.recordedAt | localDate:'dd/MM/yyyy HH:mm' }}</ng-container></div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: <img *ngIf="personAvatar(log.recordedById) as src" class="by-avatar" [src]="src" alt="">{{ recordedByName(log) }}<ng-container *ngIf="log.recordedAt"> · {{ log.recordedAt | localDate:'dd/MM/yyyy HH:mm' }}</ng-container></div>
             </div>
           </div>
 
@@ -95,7 +95,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="section-title">✓ {{ i18n.t['approvalHistoryLabel'] }}</div>
             <div class="approval-item" *ngFor="let a of order.approvalHistory; let i = index">
               <div class="history-date mono">#{{ i + 1 }} · {{ a.approvedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
-              <div class="history-by">{{ i18n.t['byWord'] }}: {{ a.approvedByName || '—' }}</div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: <img *ngIf="personAvatar(a.approvedById) as src" class="by-avatar" [src]="src" alt="">{{ a.approvedByName || '—' }}</div>
               <div class="history-reason" *ngIf="a.approvalNote">{{ i18n.t['approvalNoteLabel'] }}: {{ a.approvalNote }}</div>
             </div>
           </div>
@@ -105,7 +105,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="history-item" *ngFor="let h of order.rescheduleHistory">
               <div class="history-date mono">{{ h.fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ h.toDate | localDate:'dd/MM/yyyy':'UTC' }}</div>
               <div class="history-reason">{{ i18n.t['reasonWord'] }}: {{ h.reason }}</div>
-              <div class="history-by">{{ i18n.t['byWord'] }}: {{ h.changedByName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+              <div class="history-by">{{ i18n.t['byWord'] }}: <img *ngIf="personAvatar(h.changedBy) as src" class="by-avatar" [src]="src" alt="">{{ h.changedByName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
             </div>
           </div>
 
@@ -357,6 +357,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .history-date { font-weight: 700; margin-bottom: 5px; }
     .history-reason { color: var(--sub); margin-bottom: 5px; }
     .history-by { font-size: 12px; color: var(--sub); }
+    .by-avatar { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; vertical-align: -5px; margin-right: 5px; }
 
     .actual-item { background: var(--surface); padding: 12px 14px; margin: 8px 0; border-radius: var(--radius); border-left: 3px solid #0d8f72; }
     .actual-item-head { display: flex; align-items: center; gap: 10px; font-weight: 700; }
@@ -603,6 +604,10 @@ export class WorkOrderDetailComponent implements OnInit {
     if (!this.order || !user) return false;
     return this.order.technician?._id !== user._id && user.role === 'supervisor'
       && user.region === SOUTHERN_REGION && this.order.technician?.region !== SOUTHERN_REGION;
+  }
+
+  personAvatar(userId?: string | null): string | null {
+    return userId ? this.auth.resolveAvatarUrl(this.order?.people?.[userId]?.avatarUrl) : null;
   }
 
   // บันทึกเก่าก่อนมีการเก็บชื่อ ถ้าคนบันทึกคือช่างเจ้าของงานก็ยังรู้ชื่อได้จากตัวงาน

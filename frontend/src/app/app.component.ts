@@ -5,6 +5,7 @@ import { I18nService } from './services/i18n.service';
 import { ScheduleSearchService } from './services/schedule-search.service';
 import { NotificationService, AppNotification } from './services/notification.service';
 import { NavigationEnd, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 const NOTIF_POLL_MS = 30000;
 
@@ -30,14 +31,13 @@ const NOTIF_POLL_MS = 30000;
           </div>
           <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">{{ i18n.t['navDashboard'] }}</a>
           <div class="nav-dropdown" *ngIf="auth.isSupervisor">
-            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts') || currentUrl.startsWith('/settings/history')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}<span class="nav-caret" [class.open]="showCustomerMenu">▾</span></button>
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}<span class="nav-caret" [class.open]="showCustomerMenu">▾</span></button>
             <div class="nav-dropdown-menu" *ngIf="showCustomerMenu">
               <button class="nav-dropdown-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
               <button class="nav-dropdown-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
-              <button class="nav-dropdown-item" (click)="goToAuditHistory()">{{ i18n.t['auditHistory'] }}</button>
             </div>
           </div>
-          <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">{{ i18n.t['navUsers'] }}</a>
+          <a *ngIf="auth.isAdmin" routerLink="/settings/users" [class.active]="currentUrl.startsWith('/settings/users') || currentUrl.startsWith('/settings/history')">{{ i18n.t['navUsers'] }}</a>
         </nav>
 
         <div class="spacer"></div>
@@ -121,16 +121,15 @@ const NOTIF_POLL_MS = 30000;
           <span class="glyph">▤</span><span class="label">{{ i18n.t['navDashboard'] }}</span>
         </a>
         <div class="bottom-nav-dropdown" *ngIf="auth.isSupervisor">
-          <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts') || currentUrl.startsWith('/settings/history')" (click)="toggleCustomerMenu()">
+          <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">
             <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}<span class="nav-caret up" [class.open]="showCustomerMenu">▾</span></span>
           </button>
           <div class="bottom-nav-menu" *ngIf="showCustomerMenu">
             <button class="bottom-nav-menu-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
             <button class="bottom-nav-menu-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
-            <button class="bottom-nav-menu-item" (click)="goToAuditHistory()">{{ i18n.t['auditHistory'] }}</button>
           </div>
         </div>
-        <a *ngIf="auth.isAdmin" routerLink="/settings/users" routerLinkActive="active">
+        <a *ngIf="auth.isAdmin" routerLink="/settings/users" [class.active]="currentUrl.startsWith('/settings/users') || currentUrl.startsWith('/settings/history')">
           <span class="glyph">👤</span><span class="label">{{ i18n.t['navUsers'] }}</span>
         </a>
       </nav>
@@ -379,6 +378,7 @@ export class AppComponent implements OnInit, OnDestroy {
   showLogoutConfirm = false;
   showNotifications = false;
   notifPanelLeft: number | null = null;
+  private userSub?: Subscription;
   private notifOpenedAtWidth = 0;
   showUserMenu = false;
   showCustomerMenu = false;
@@ -399,9 +399,14 @@ export class AppComponent implements OnInit, OnDestroy {
   ) {
     this.currentUrl = this.router.url;
     this.router.events.subscribe(event => {
-      if (event instanceof NavigationEnd) this.currentUrl = event.urlAfterRedirects;
+      if (event instanceof NavigationEnd) {
+        this.currentUrl = event.urlAfterRedirects;
+        this.cdr.markForCheck();
+      }
     });
     document.addEventListener('scroll', this.closeMenusOnScroll, true);
+    // แอปไม่ได้ใช้ zone ตรวจการเปลี่ยนแปลงให้ แก้รูปหรือชื่อในหน้าข้อมูลของฉันแล้วต้องสั่งวาดแถบด้านบนใหม่เอง
+    this.userSub = this.auth.currentUser$.subscribe(() => this.cdr.markForCheck());
   }
 
   // เลื่อนจอแล้วปิดเมนูและกล่องแจ้งเตือนทั้งหมด ให้ตรงกับช่องเลือกวันที่ เวลา และตัวเลือกอื่นๆ ในเว็บ
@@ -423,6 +428,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.pollHandle) clearInterval(this.pollHandle);
+    this.userSub?.unsubscribe();
     document.removeEventListener('scroll', this.closeMenusOnScroll, true);
   }
 
@@ -481,11 +487,6 @@ export class AppComponent implements OnInit, OnDestroy {
   goToContracts() {
     this.showCustomerMenu = false;
     this.router.navigate(['/settings/contracts']);
-  }
-
-  goToAuditHistory() {
-    this.showCustomerMenu = false;
-    this.router.navigate(['/settings/history']);
   }
 
   goToAddWork() {

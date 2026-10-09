@@ -8,8 +8,21 @@ const { sendServerError } = require('../utils/httpErrors');
 const { isSupervisorRole, isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const logger = require('../config/logger');
 const { uploadAvatar, saveAvatar, deletePhotoFile } = require('../middleware/upload');
+const { diffFields, recordAudit } = require('../utils/auditLog');
 
 const router = express.Router();
+
+// ช่องที่เก็บลงประวัติ ไม่รวมรหัสผ่านเพราะไม่ควรเก็บแม้แต่ค่าเข้ารหัส
+const auditSnapshot = (user) => ({
+  username: user.username,
+  fullName: user.fullName,
+  role: user.role,
+  email: user.email || null,
+  phone: user.phone || null,
+  province: user.province || null
+});
+
+const auditLabel = (user) => `${user.fullName} (${user.username})`;
 
 // สมัครผู้ใช้ สำหรับ admin เท่านั้น
 router.post('/register', protect, authorize('admin'), async (req, res) => {
@@ -41,6 +54,10 @@ router.post('/register', protect, authorize('admin'), async (req, res) => {
     });
 
     logger.info(`User registered: ${username} (${user.id})`);
+    await recordAudit({
+      entityType: 'user', entityId: user.id, entityLabel: auditLabel(user), action: 'create',
+      changes: diffFields(null, auditSnapshot(user)), user: req.user
+    });
 
     res.status(201).json({
       _id: user.id,
@@ -238,10 +255,21 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
       return res.status(404).json({ code: 'user_not_found', message: 'User not found' });
     }
 
-    const { fullName, role, email, phone, province, active, password } = req.body;
+    const { fullName, role, email, phone, province, active, password, reason } = req.body;
 
     if (active === false && user.id === req.user.id) {
       return res.status(400).json({ code: 'cannot_deactivate_self', message: 'You cannot deactivate your own account' });
+    }
+
+    // ทั้งปิดและเปิดใช้งานบัญชีต้องระบุเหตุผล เพื่อให้ตามย้อนหลังได้ว่าทำไปเพราะอะไร
+    const toggleReason = typeof reason === 'string' ? reason.trim() : '';
+    const deactivating = active === false && user.active !== false;
+    const reactivating = active === true && user.active === false;
+    if (deactivating && !toggleReason) {
+      return res.status(400).json({ code: 'deactivate_reason_required', message: 'Please provide a reason for deactivation' });
+    }
+    if (reactivating && !toggleReason) {
+      return res.status(400).json({ code: 'activate_reason_required', message: 'Please provide a reason for reactivation' });
     }
 
     // ผู้ใช้ที่ถูกปิดใช้งานแล้ว ต้องเปิดใช้งานก่อนถึงจะแก้ไขข้อมูลอื่นได้ ฝั่ง UI ปิดปุ่มแก้ไขไว้อยู่แล้ว
@@ -250,12 +278,23 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
       return res.status(400).json({ code: 'user_inactive', message: 'Reactivate the user before editing other fields' });
     }
 
+    const before = auditSnapshot(user);
+
     if (fullName !== undefined) user.fullName = fullName;
     if (role !== undefined) user.role = role;
     // ค่าว่างต้องแปลงเป็น null เหมือนที่ PATCH /me แก้ไว้ กันปัญหาเดียวกันตอนแอดมินแก้ผู้ใช้ที่ยังไม่มี email
     if (email !== undefined) user.email = email || null;
     if (phone !== undefined) user.phone = phone;
     if (province !== undefined) user.province = province;
+
+    // เก็บข้อมูลของรอบล่าสุดรอบเดียว รอบก่อนหน้าดูได้จากหน้าประวัติการแก้ไข
+    if (deactivating) {
+      Object.assign(user, { deactivatedReason: toggleReason, deactivatedAt: new Date(), deactivatedBy: req.user.fullName });
+      Object.assign(user, { reactivatedReason: null, reactivatedAt: null, reactivatedBy: null });
+    } else if (reactivating) {
+      Object.assign(user, { reactivatedReason: toggleReason, reactivatedAt: new Date(), reactivatedBy: req.user.fullName });
+      Object.assign(user, { deactivatedReason: null, deactivatedAt: null, deactivatedBy: null });
+    }
     if (active !== undefined) user.active = active;
     if (password) {
       const salt = await bcrypt.genSalt(10);
@@ -264,6 +303,24 @@ router.patch('/users/:id', protect, authorize('admin'), async (req, res) => {
 
     await user.save();
     logger.info(`User updated: ${user.username} by ${req.user.username}`);
+
+    const label = auditLabel(user);
+    if (deactivating) {
+      await recordAudit({
+        entityType: 'user', entityId: user.id, entityLabel: label, action: 'deactivate',
+        changes: [{ field: 'deactivatedReason', from: null, to: toggleReason }], user: req.user
+      });
+    } else if (reactivating) {
+      await recordAudit({
+        entityType: 'user', entityId: user.id, entityLabel: label, action: 'activate',
+        changes: [{ field: 'reactivatedReason', from: null, to: toggleReason }], user: req.user
+      });
+    }
+    const changes = diffFields(before, auditSnapshot(user));
+    if (password) changes.push({ field: 'password', from: null, to: null });
+    if (changes.length) {
+      await recordAudit({ entityType: 'user', entityId: user.id, entityLabel: label, action: 'update', changes, user: req.user });
+    }
     res.json(user);
   } catch (error) {
     logger.error(`Update user error: ${error.message}`);
