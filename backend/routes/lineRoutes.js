@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 const User = require('../models/User');
 const Hospital = require('../models/Hospital');
 const WorkOrder = require('../models/WorkOrder');
-const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, CANCELLABLE_STATUSES } = require('../services/workOrderService');
+const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, verifyActualLog, rejectActualLog, addPhotos, CANCELLABLE_STATUSES } = require('../services/workOrderService');
 const { saveCompressedPhoto } = require('../middleware/upload');
 const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = require('../utils/lineJobParser');
 const lineSession = require('../utils/lineSession');
@@ -70,7 +70,10 @@ const SERVICE_ERROR_TH = {
   cannot_cancel_status: 'งานนี้ยกเลิกไม่ได้ในสถานะปัจจุบัน',
   actual_description_required: 'กรุณาระบุรายละเอียดงานที่ทำได้จริง',
   repair_status_required: 'กรุณาเลือกสถานะการซ่อม',
-  repair_incomplete_reason_required: 'กรุณาระบุสาเหตุที่ยังซ่อมไม่เสร็จ'
+  repair_incomplete_reason_required: 'กรุณาระบุสาเหตุที่ยังซ่อมไม่เสร็จ',
+  actual_log_not_found: 'ไม่พบบันทึกงานจริงรายการนี้',
+  actual_log_already_verified: 'บันทึกงานจริงรายการนี้ตรวจรับไปแล้ว',
+  reject_fields_required: 'กรุณาระบุวันที่และรายละเอียดงานใหม่'
 };
 
 const serviceErrorText = (error) => {
@@ -103,11 +106,19 @@ const ACTUAL_PROMPTS = {
 
 const APPROVE_HELP_TEXT =
 `สำหรับหัวหน้าช่าง/แอดมิน พิมพ์เพื่ออนุมัติงาน
+พิมพ์ "รออนุมัติ" เพื่อดูรายการที่รออนุมัติ
 
 อนุมัติ เลขที่งาน
 หมายเหตุ: หมายเหตุ (ไม่บังคับ)
 
-เช่น: อนุมัติ SR-202609-0034`;
+เช่น: อนุมัติ SR-202609-0034
+
+ตรวจรับบันทึกงานจริง
+พิมพ์ "รอตรวจรับ" เพื่อดูรายการที่รอตรวจรับ
+ตรวจรับ เลขที่งาน เช่น: ตรวจรับ SR-202609-0034
+ไม่ผ่าน เลขที่งาน เช่น: ไม่ผ่าน SR-202609-0034
+ถ้างานมีหลายรายการรอตรวจรับ ให้ใส่ลำดับต่อท้าย เช่น: ตรวจรับ SR-202609-0034 2
+กดไม่ผ่านแล้วบอทจะถามวันที่ เวลา และรายละเอียด เพื่อสร้างงานใหม่เลข SR เดิมต่อท้าย -2`;
 
 const LINK_HELP_TEXT =
   'ยังไม่ได้เชื่อมบัญชี พิมพ์ "login" แล้วบอทจะถามทีละขั้น\nหรือพิมพ์บรรทัดเดียว: login ชื่อผู้ใช้ รหัสผ่าน';
@@ -578,7 +589,8 @@ const finishActualWork = async (lineUserId, technician, data, replyToken) => {
   }
 
   const statusLabel = order.status === 'completed' ? 'เสร็จสิ้น' : 'อนุมัติแล้ว (ยังไม่เสร็จ)';
-  return replyText(replyToken, `บันทึกงานจริง ${order.srNumber} สำเร็จ\nสถานะ: ${statusLabel}`);
+  return replyText(replyToken,
+    `บันทึกงานจริง ${order.srNumber} สำเร็จ\nสถานะ: ${statusLabel}\nบันทึกนี้รอหัวหน้าตรวจรับ`);
 };
 
 const handleActualStep = async (text, technician, lineUserId, replyToken, session) => {
@@ -730,6 +742,187 @@ const handleApprove = async (text, approver, replyToken) => {
     return replyText(replyToken, serviceErrorText(error));
   }
   return replyText(replyToken, `อนุมัติงาน ${srNumber} สำเร็จ\nลูกค้า: ${order.customerName}`);
+};
+
+// ตรวจรับบันทึกงานจริงใน LINE ใช้กฎเดียวกับหน้าเว็บ หัวหน้าภาคใต้ทำได้แค่งานภาคใต้
+const VERIFY_KEYWORD = /^ตรวจรับ\s+(\S+)(?:\s+(\d+))?$/;
+const REJECT_KEYWORD = /^ไม่ผ่าน\s+(\S+)(?:\s+(\d+))?$/;
+const PENDING_VERIFY_LIST_LIMIT = 20;
+
+const REJECT_PROMPTS = {
+  plannedDate: 'วันที่นัดงานใหม่ (วว/ดด/ปปปป) เช่น 20/09/2026',
+  plannedTime: 'เวลา (HH:MM-HH:MM) เช่น 09:00-12:00',
+  description: 'รายละเอียด / อาการที่แจ้ง'
+};
+
+// ลำดับในบันทึกงานจริงที่ยังไม่ได้ตรวจรับ เริ่มจากศูนย์ ตรงกับลำดับที่หน้าเว็บใช้
+const pendingLogIndexes = (order) => (order.actualLog || [])
+  .map((log, index) => (log.verifiedAt ? null : index))
+  .filter((index) => index !== null);
+
+const actualLogLine = (order, index) => {
+  const log = order.actualLog[index];
+  return `Actual #${index + 1} วันที่ ${formatThaiDate(log.actualDate)}: ${log.actualDescription}`;
+};
+
+// หางานและรายการที่จะตรวจรับ ถ้ามีหลายรายการรออยู่แต่ไม่ได้ระบุลำดับ จะให้เลือกก่อน
+const findLogForVerify = async (text, keyword, supervisor, verb) => {
+  if (!isSupervisorRole(supervisor.role)) return { reply: SUPERVISOR_ONLY_TEXT };
+
+  const [, srNumber, sequence] = text.trim().match(keyword);
+  const found = await findOrderForAction(srNumber, supervisor, { verb });
+  if (found.notFound) return { reply: `ไม่พบงานเลขที่ ${srNumber}` };
+  if (found.denied) return { reply: found.denied };
+
+  const { order } = found;
+  if (order.status === 'cancelled') return { reply: `งาน ${srNumber} ถูกยกเลิกแล้ว` };
+  const pending = pendingLogIndexes(order);
+  if (pending.length === 0) return { reply: `งาน ${srNumber} ไม่มีบันทึกงานจริงที่รอตรวจรับ` };
+
+  if (sequence) {
+    const index = Number(sequence) - 1;
+    if (!pending.includes(index)) {
+      return { reply: `Actual #${sequence} ของงาน ${srNumber} ไม่ได้รอตรวจรับ\nรายการที่รอ: ${pending.map((i) => `#${i + 1}`).join(' ')}` };
+    }
+    return { order, index };
+  }
+  if (pending.length > 1) {
+    const lines = pending.map((i) => actualLogLine(order, i)).join('\n');
+    return { reply: `งาน ${srNumber} มี ${pending.length} รายการรอตรวจรับ กรุณาใส่ลำดับต่อท้าย\n\n${lines}\n\nเช่น: ${verb} ${srNumber} ${pending[0] + 1}` };
+  }
+  return { order, index: pending[0] };
+};
+
+const SUPERVISOR_ONLY_TEXT = 'คำสั่งนี้ใช้ได้เฉพาะหัวหน้าช่าง/แอดมินเท่านั้น';
+
+// หัวหน้าภาคใต้ใส่เงื่อนไขที่ include ทำให้ได้แค่งานของช่างภาคใต้ตั้งแต่ query
+const technicianIncludeFor = (supervisor) => (isRegionRestricted(supervisor)
+  ? { model: User, as: 'technician', attributes: ['fullName'], where: { region: RESTRICTED_SUPERVISOR_REGION } }
+  : { model: User, as: 'technician', attributes: ['fullName'] });
+
+// หัวข้อพร้อมจำนวน แล้วตามด้วยรายการไม่เกิน 20 บรรทัด
+const listReply = (title, lines) => {
+  const more = lines.length > PENDING_VERIFY_LIST_LIMIT
+    ? `\n...และอีก ${lines.length - PENDING_VERIFY_LIST_LIMIT} รายการ ดูทั้งหมดในเว็บ` : '';
+  const numbered = lines.slice(0, PENDING_VERIFY_LIST_LIMIT).map((line, i) => `${i + 1}. ${line}`);
+  return `${title} ${lines.length} รายการ\n${numbered.join('\n')}${more}`;
+};
+
+const handlePendingVerifyList = async (supervisor, replyToken) => {
+  if (!isSupervisorRole(supervisor.role)) return replyText(replyToken, SUPERVISOR_ONLY_TEXT);
+  const orders = await WorkOrder.findAll({
+    where: { status: { [Op.ne]: 'cancelled' } },
+    include: [technicianIncludeFor(supervisor)],
+    order: [['plannedDate', 'ASC']]
+  });
+  const lines = orders.flatMap((order) => pendingLogIndexes(order).map((index) =>
+    `${order.srNumber} #${index + 1} ${order.customerName} (${order.technician?.fullName || '-'})`));
+  if (lines.length === 0) return replyText(replyToken, 'ไม่มีบันทึกงานจริงที่รอตรวจรับ');
+  return replyText(replyToken, listReply('รอตรวจรับ', lines));
+};
+
+// งานที่รออนุมัติแผน รวมงานที่ถูกเลื่อนแล้วกลับมารออนุมัติใหม่
+const handlePendingApprovalList = async (supervisor, replyToken) => {
+  if (!isSupervisorRole(supervisor.role)) return replyText(replyToken, SUPERVISOR_ONLY_TEXT);
+  const orders = await WorkOrder.findAll({
+    where: { status: 'pending_approval' },
+    include: [technicianIncludeFor(supervisor)],
+    order: [['plannedDate', 'ASC']]
+  });
+  if (orders.length === 0) return replyText(replyToken, 'ไม่มีงานรออนุมัติ');
+  const lines = orders.map((order) =>
+    `${order.srNumber} ${order.workType} ${order.customerName} (${order.technician?.fullName || '-'}) ${formatThaiDate(order.plannedDate)}`);
+  return replyText(replyToken, listReply('รออนุมัติ', lines));
+};
+
+const handleVerify = async (text, supervisor, replyToken) => {
+  const found = await findLogForVerify(text, VERIFY_KEYWORD, supervisor, 'ตรวจรับ');
+  if (found.reply) return replyText(replyToken, found.reply);
+  const { order, index } = found;
+  try {
+    await verifyActualLog(order, index, {
+      verifiedById: supervisor.id, verifiedByName: supervisor.fullName, actorLabel: `${supervisor.username} (LINE)`
+    });
+  } catch (error) {
+    return replyText(replyToken, serviceErrorText(error));
+  }
+  return replyText(replyToken, `ตรวจรับ ${order.srNumber} Actual #${index + 1} สำเร็จ`);
+};
+
+// เริ่มขั้นตอนไม่ผ่าน ถามวันที่ เวลา และรายละเอียดทีละขั้นเหมือนหน้าต่างไม่ผ่านในเว็บ
+const startRejectSession = async (text, supervisor, lineUserId, replyToken) => {
+  const found = await findLogForVerify(text, REJECT_KEYWORD, supervisor, 'ไม่ผ่าน');
+  if (found.reply) return replyText(replyToken, found.reply);
+  const { order, index } = found;
+  lineSession.set(lineUserId, {
+    flow: 'reject', step: 'plannedDate',
+    data: { orderId: order.id, logIndex: index, plannedStartTime: order.plannedStartTime, plannedEndTime: order.plannedEndTime }
+  });
+  return replyText(replyToken,
+    `ไม่ผ่าน (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n${orderSummaryLines(order)}\n${actualLogLine(order, index)}\n\n` +
+    `ระบบจะสร้างงานใหม่ให้ช่างคนเดิม และงานนี้จะเปลี่ยนเป็นเสร็จสิ้น\n\n${REJECT_PROMPTS.plannedDate}`);
+};
+
+const handleRejectStep = async (text, supervisor, lineUserId, replyToken, session) => {
+  const value = text.trim();
+
+  if (ABORT_KEYWORDS.includes(value)) {
+    lineSession.clear(lineUserId);
+    return replyText(replyToken, 'ยกเลิกการไม่ผ่านแล้ว บันทึกงานจริงยังรอตรวจรับเหมือนเดิม');
+  }
+
+  const { step, data } = session;
+
+  if (step === 'plannedDate') {
+    const date = parseThaiDate(value);
+    if (!date) {
+      return replyText(replyToken, 'รูปแบบวันที่ไม่ถูกต้อง ลองใหม่ (วว/ดด/ปปปป) เช่น 20/09/2026');
+    }
+    data.plannedDate = date;
+    lineSession.set(lineUserId, { flow: 'reject', step: 'plannedTime', data });
+    // ตั้งเวลาตามงานเดิมไว้ก่อน แบบเดียวกับหน้าต่างไม่ผ่านในเว็บ
+    const originalTime = data.plannedStartTime && data.plannedEndTime ? `${data.plannedStartTime}-${data.plannedEndTime}` : null;
+    return replyText(replyToken, originalTime
+      ? `${REJECT_PROMPTS.plannedTime}\nเวลาของงานเดิม: ${originalTime}\n(พิมพ์ ข้าม เพื่อใช้เวลาเดิม)`
+      : `${REJECT_PROMPTS.plannedTime}\n(พิมพ์ ข้าม ถ้าไม่ระบุเวลา)`);
+  }
+
+  if (step === 'plannedTime') {
+    if (!isSkip(value)) {
+      const range = parseTimeRange(value);
+      if (!range) {
+        return replyText(replyToken, 'รูปแบบเวลาไม่ถูกต้อง ลองใหม่ (HH:MM-HH:MM) เช่น 09:00-12:00 หรือพิมพ์ ข้าม');
+      }
+      data.plannedStartTime = range.start;
+      data.plannedEndTime = range.end;
+    }
+    lineSession.set(lineUserId, { flow: 'reject', step: 'description', data });
+    return replyText(replyToken, REJECT_PROMPTS.description);
+  }
+
+  // ขั้นตอนรายละเอียด
+  if (!value) return replyText(replyToken, REJECT_PROMPTS.description);
+  lineSession.clear(lineUserId);
+  const order = await WorkOrder.findByPk(data.orderId, { include: [{ model: User, as: 'technician' }] });
+  if (!order) {
+    return replyText(replyToken, 'ไม่พบงานนี้แล้ว (อาจถูกลบไปแล้ว)');
+  }
+  // เช็คสิทธิ์ซ้ำตอนจบ เพราะระหว่างถามทีละขั้นอาจมีคนเปลี่ยนแปลงงานไปแล้ว
+  if (isBlockedByRegion(supervisor, order)) return replyText(replyToken, REGION_DENIED_TEXT);
+
+  let followUp;
+  try {
+    ({ followUp } = await rejectActualLog(order, data.logIndex, {
+      plannedDate: data.plannedDate, plannedStartTime: data.plannedStartTime ?? '', plannedEndTime: data.plannedEndTime ?? '',
+      description: value, verifiedById: supervisor.id, verifiedByName: supervisor.fullName, actorLabel: `${supervisor.username} (LINE)`
+    }));
+  } catch (error) {
+    return replyText(replyToken, serviceErrorText(error));
+  }
+  const time = followUp.plannedStartTime && followUp.plannedEndTime ? `\nเวลา: ${followUp.plannedStartTime}-${followUp.plannedEndTime}` : '';
+  return replyText(replyToken,
+    `ไม่ผ่าน ${order.srNumber} Actual #${data.logIndex + 1}\nงาน ${order.srNumber} เปลี่ยนเป็นเสร็จสิ้น\n\n` +
+    `สร้างงานใหม่ ${followUp.srNumber} สำเร็จ\nวันที่: ${formatThaiDate(followUp.plannedDate)}${time}\nสถานะ: อนุมัติแล้ว`);
 };
 
 const LINE_CONTENT_URL = (messageId) => `https://api-data.line.me/v2/bot/message/${messageId}/content`;
@@ -910,6 +1103,9 @@ router.post('/webhook', async (req, res) => {
       } else if (session && session.flow === 'photo') {
         logger.info(`LINE webhook: handling photo-attach step "${session.step}" from ${technician.username}`);
         await handlePhotoTextStep(text, technician, lineUserId, replyToken, session);
+      } else if (session && session.flow === 'reject') {
+        logger.info(`LINE webhook: handling reject step "${session.step}" from ${technician.username}`);
+        await handleRejectStep(text, technician, lineUserId, replyToken, session);
       } else if (text === 'เพิ่มงาน') {
         logger.info(`LINE webhook: starting add-job session for ${technician.username}`);
         await startAddJobSession(lineUserId, replyToken);
@@ -928,6 +1124,18 @@ router.post('/webhook', async (req, res) => {
       } else if (isAddJobMessage(text)) {
         logger.info(`LINE webhook: handling one-shot add-job message from ${technician.username}`);
         await handleAddJob(text, technician, replyToken);
+      } else if (text === 'รออนุมัติ') {
+        logger.info(`LINE webhook: listing pending approval for ${technician.username}`);
+        await handlePendingApprovalList(technician, replyToken);
+      } else if (text === 'รอตรวจรับ') {
+        logger.info(`LINE webhook: listing pending verification for ${technician.username}`);
+        await handlePendingVerifyList(technician, replyToken);
+      } else if (VERIFY_KEYWORD.test(text)) {
+        logger.info(`LINE webhook: handling verify message from ${technician.username}`);
+        await handleVerify(text, technician, replyToken);
+      } else if (REJECT_KEYWORD.test(text)) {
+        logger.info(`LINE webhook: starting reject session for ${technician.username}`);
+        await startRejectSession(text, technician, lineUserId, replyToken);
       } else if (isApproveMessage(text)) {
         logger.info(`LINE webhook: handling approve message from ${technician.username}`);
         await handleApprove(text, technician, replyToken);

@@ -8,7 +8,7 @@ const { sequelize } = require('../config/database');
 const User = require('../models/User');
 const WorkOrder = require('../models/WorkOrder');
 const Notification = require('../models/Notification');
-const { createWorkOrder } = require('../services/workOrderService');
+const { createWorkOrder, approveWorkOrder, logActualWork } = require('../services/workOrderService');
 
 // เก็บข้อความที่บอทตอบกลับแทนการยิงไป LINE จริง
 const replies = [];
@@ -143,5 +143,102 @@ describe('LINE bot matches web rules', () => {
     const order = await WorkOrder.findOne({ where: { customerName: 'รพ.ข' } });
     expect(order.workType).toBe('อื่นๆ');
     expect(order.description).toBe('ประเภทงาน: ตรวจเช็คระบบ');
+  });
+});
+
+describe('ตรวจรับบันทึกงานจริงใน LINE', () => {
+  // งานที่อนุมัติแล้วและมีบันทึกงานจริงรอตรวจรับตามจำนวนที่ต้องการ
+  const jobWithPendingActual = async (technician, customerName, logCount = 1) => {
+    const order = await newOrder(technician, customerName);
+    await approveWorkOrder(order, { approvedById: southSup.id });
+    for (let i = 0; i < logCount; i++) {
+      await logActualWork(order, {
+        actualDate: '2026-10-01', actualDescription: `รอบที่ ${i + 1}`, repairCompleted: true,
+        recordedById: technician.id, recordedByName: technician.fullName
+      });
+    }
+    return order;
+  };
+
+  test('ช่างบันทึกงานจริงแล้วบอทบอกว่ารอหัวหน้าตรวจรับ', async () => {
+    const order = await newOrder(southTech, 'รพ.บันทึก');
+    await approveWorkOrder(order, { approvedById: southSup.id });
+    await send(SOUTH_TECH, 'บันทึกงานจริง');
+    await send(SOUTH_TECH, order.srNumber);
+    await send(SOUTH_TECH, '01/10/2026');
+    await send(SOUTH_TECH, 'ข้าม');
+    await send(SOUTH_TECH, 'ข้าม');
+    await send(SOUTH_TECH, 'เปลี่ยนอะไหล่แล้ว');
+    expect(await send(SOUTH_TECH, '1')).toContain('รอหัวหน้าตรวจรับ');
+  });
+
+  test('รอตรวจรับแสดงแค่งานภาคใต้ให้หัวหน้าภาคใต้', async () => {
+    const south = await jobWithPendingActual(southTech, 'รพ.รอใต้');
+    const north = await jobWithPendingActual(northTech, 'รพ.รอเหนือ');
+    const reply = await send(SOUTH_SUP, 'รอตรวจรับ');
+    expect(reply).toMatch(/^รอตรวจรับ \d+ รายการ\n/);
+    // ทุกบรรทัดมีเลขลำดับนำหน้า เช่น 1. 2. 3.
+    expect(reply.split('\n').slice(1).every((line, i) => line.startsWith(`${i + 1}. `))).toBe(true);
+    expect(reply).toContain(`. ${south.srNumber} #1 รพ.รอใต้ (South Tech)`);
+    expect(reply).not.toContain(north.srNumber);
+  });
+
+  test('รออนุมัติแสดงประเภทงาน ลูกค้า ช่าง และวันที่ เฉพาะภาคใต้', async () => {
+    const south = await newOrder(southTech, 'รพ.รออนุมัติใต้');
+    const north = await newOrder(northTech, 'รพ.รออนุมัติเหนือ');
+    const reply = await send(SOUTH_SUP, 'รออนุมัติ');
+    expect(reply).toMatch(/^รออนุมัติ \d+ รายการ\n/);
+    expect(reply.split('\n').slice(1).every((line, i) => line.startsWith(`${i + 1}. `))).toBe(true);
+    expect(reply).toContain(`. ${south.srNumber} ซ่อม รพ.รออนุมัติใต้ (South Tech) 1/10/2569`);
+    expect(reply).not.toContain(north.srNumber);
+    expect(await send(SOUTH_TECH, 'รออนุมัติ')).toContain('เฉพาะหัวหน้าช่าง');
+  });
+
+  test('ช่างใช้คำสั่งตรวจรับไม่ได้ และหัวหน้าภาคใต้ตรวจรับงานภาคอื่นไม่ได้', async () => {
+    const north = await jobWithPendingActual(northTech, 'รพ.เหนือตรวจ');
+    expect(await send(SOUTH_TECH, `ตรวจรับ ${north.srNumber}`)).toContain('เฉพาะหัวหน้าช่าง');
+    expect(await send(SOUTH_SUP, `ตรวจรับ ${north.srNumber}`)).toBe(REGION_DENIED);
+  });
+
+  test('ตรวจรับผ่าน และมีหลายรายการต้องใส่ลำดับ', async () => {
+    const order = await jobWithPendingActual(southTech, 'รพ.สองรอบ', 2);
+    expect(await send(SOUTH_SUP, `ตรวจรับ ${order.srNumber}`)).toContain('กรุณาใส่ลำดับ');
+    expect(await send(SOUTH_SUP, `ตรวจรับ ${order.srNumber} 2`)).toContain('สำเร็จ');
+    expect(await send(SOUTH_SUP, `ตรวจรับ ${order.srNumber}`)).toContain('สำเร็จ');
+    await order.reload();
+    expect(order.actualLog.map((l) => l.verifyResult)).toEqual(['passed', 'passed']);
+    expect(await send(SOUTH_SUP, `ตรวจรับ ${order.srNumber}`)).toContain('ไม่มีบันทึกงานจริงที่รอตรวจรับ');
+  });
+
+  test('ไม่ผ่านถามวันที่ เวลา รายละเอียด แล้วสร้างงานต่อ', async () => {
+    const order = await jobWithPendingActual(southTech, 'รพ.ไม่ผ่าน');
+    expect(await send(SOUTH_SUP, `ไม่ผ่าน ${order.srNumber}`)).toContain('วันที่นัดงานใหม่');
+    expect(await send(SOUTH_SUP, '20/10/2026')).toContain('เวลาของงานเดิม: 09:00-12:00');
+    await send(SOUTH_SUP, '13:00-15:00');
+    const reply = await send(SOUTH_SUP, 'เครื่องยังมีเสียงดัง');
+    expect(reply).toContain(`สร้างงานใหม่ ${order.srNumber}-2 สำเร็จ`);
+
+    await order.reload();
+    expect(order.status).toBe('completed');
+    expect(order.actualLog[0]).toMatchObject({ verifyResult: 'rejected', followUpSrNumber: `${order.srNumber}-2` });
+    const followUp = await WorkOrder.findOne({ where: { srNumber: `${order.srNumber}-2` } });
+    expect(followUp).toMatchObject({
+      status: 'approved', technicianId: southTech.id, description: 'เครื่องยังมีเสียงดัง', plannedStartTime: '13:00', plannedEndTime: '15:00'
+    });
+  });
+
+  test('พิมพ์หยุดระหว่างไม่ผ่าน บันทึกยังรอตรวจรับเหมือนเดิม', async () => {
+    const order = await jobWithPendingActual(southTech, 'รพ.หยุด');
+    await send(SOUTH_SUP, `ไม่ผ่าน ${order.srNumber}`);
+    expect(await send(SOUTH_SUP, 'หยุด')).toContain('ยังรอตรวจรับ');
+    await order.reload();
+    expect(order.actualLog[0].verifiedAt).toBeNull();
+    expect(order.status).not.toBe('cancelled');
+  });
+
+  test('ข้อความช่วยเหลือของหัวหน้ามีคำสั่งตรวจรับ', async () => {
+    const help = await send(SOUTH_SUP, 'สวัสดี');
+    expect(help).toContain('รอตรวจรับ');
+    expect(help).toContain('ไม่ผ่าน เลขที่งาน');
   });
 });
