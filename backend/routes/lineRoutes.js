@@ -177,7 +177,7 @@ const finishLogin = async (user, lineUserId, replyToken) => {
   logger.info(`LINE account linked: ${user.username}`);
   const roleHelp = isSupervisorRole(user.role) ? `\n\n${APPROVE_HELP_TEXT}` : '';
   return replyText(replyToken,
-    `เชื่อมบัญชีสำเร็จ ✅ สวัสดีคุณ ${user.fullName}\n\n${HELP_TEXT}${roleHelp}\n\n${LOGIN_SWITCH_TEXT}`);
+    `เชื่อมบัญชีสำเร็จ สวัสดีคุณ ${user.fullName}\n\n${HELP_TEXT}${roleHelp}\n\n${LOGIN_SWITCH_TEXT}`);
 };
 
 // จงใจใช้ข้อความเดียวกันไม่ว่าจะเป็นชื่อผู้ใช้ผิดหรือรหัสผ่านผิด กันคนร้ายไล่เดาว่าชื่อไหนมีจริง
@@ -220,7 +220,7 @@ const startLoginSession = (lineUserId, replyToken) => {
   }
   lineSession.set(lineUserId, { flow: 'login', step: 'username', data: {} });
   return replyText(replyToken,
-    `เข้าสู่ระบบ 🔐 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${LOGIN_PROMPTS.username}`);
+    `เข้าสู่ระบบ (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${LOGIN_PROMPTS.username}`);
 };
 
 const handleLoginStep = async (text, lineUserId, replyToken, session) => {
@@ -280,7 +280,7 @@ const finishAddJob = async (technician, data, replyToken) => {
     return replyText(replyToken, serviceErrorText(error));
   }
   return replyText(replyToken,
-    `เพิ่มงานสำเร็จ ✅\nเลขที่: ${workOrder.srNumber}\nลูกค้า: ${workOrder.customerName}\n` +
+    `เพิ่มงานสำเร็จ\nเลขที่: ${workOrder.srNumber}\nลูกค้า: ${workOrder.customerName}\n` +
     `วันที่: ${formatThaiDate(data.plannedDate)}\n\nสถานะ: รอหัวหน้าอนุมัติ`);
 };
 
@@ -329,7 +329,7 @@ const handleAddJob = async (text, technician, replyToken) => {
 const startAddJobSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'addJob', step: 'customerName', data: {} });
   return replyText(replyToken,
-    `เริ่มเพิ่มงานใหม่ ✏️ (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${ADD_JOB_PROMPTS.customerName}`);
+    `เริ่มเพิ่มงานใหม่ (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${ADD_JOB_PROMPTS.customerName}`);
 };
 
 const handleAddJobStep = async (text, technician, lineUserId, replyToken, session) => {
@@ -430,7 +430,7 @@ const findOrderForAction = async (srNumber, user, { verb }) => {
 const startRescheduleSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'reschedule', step: 'srNumber', data: {} });
   return replyText(replyToken,
-    `เลื่อนงาน 🔄 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${RESCHEDULE_PROMPTS.srNumber}`);
+    `เลื่อนงาน (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${RESCHEDULE_PROMPTS.srNumber}`);
 };
 
 const handleRescheduleStep = async (text, technician, lineUserId, replyToken, session) => {
@@ -487,13 +487,13 @@ const handleRescheduleStep = async (text, technician, lineUserId, replyToken, se
     return replyText(replyToken, serviceErrorText(error));
   }
   return replyText(replyToken,
-    `เลื่อนงาน ${order.srNumber} สำเร็จ ✅\nวันที่ใหม่: ${formatThaiDate(data.newDate)}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
+    `เลื่อนงาน ${order.srNumber} สำเร็จ\nวันที่ใหม่: ${formatThaiDate(data.newDate)}\nสถานะ: รอหัวหน้าอนุมัติอีกครั้ง`);
 };
 
 const startCancelJobSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'cancelJob', step: 'srNumber', data: {} });
   return replyText(replyToken,
-    `ยกเลิกงาน 🚫 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${CANCEL_JOB_PROMPTS.srNumber}`);
+    `ยกเลิกงาน (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${CANCEL_JOB_PROMPTS.srNumber}`);
 };
 
 const handleCancelJobStep = async (text, technician, lineUserId, replyToken, session) => {
@@ -541,13 +541,13 @@ const handleCancelJobStep = async (text, technician, lineUserId, replyToken, ses
   } catch (error) {
     return replyText(replyToken, serviceErrorText(error));
   }
-  return replyText(replyToken, `ยกเลิกงาน ${order.srNumber} สำเร็จ ✅`);
+  return replyText(replyToken, `ยกเลิกงาน ${order.srNumber} สำเร็จ`);
 };
 
 const startActualSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'actual', step: 'srNumber', data: {} });
   return replyText(replyToken,
-    `บันทึกงานจริง 📝 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${ACTUAL_PROMPTS.srNumber}`);
+    `บันทึกงานจริง (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\n${ACTUAL_PROMPTS.srNumber}`);
 };
 
 const finishActualWork = async (lineUserId, technician, data, replyToken) => {
@@ -575,8 +575,8 @@ const finishActualWork = async (lineUserId, technician, data, replyToken) => {
     return replyText(replyToken, serviceErrorText(error));
   }
 
-  const statusLabel = order.status === 'completed' ? 'เสร็จสิ้น ✅' : 'อนุมัติแล้ว (ยังไม่เสร็จ)';
-  return replyText(replyToken, `บันทึกงานจริง ${order.srNumber} สำเร็จ ✅\nสถานะ: ${statusLabel}`);
+  const statusLabel = order.status === 'completed' ? 'เสร็จสิ้น' : 'อนุมัติแล้ว (ยังไม่เสร็จ)';
+  return replyText(replyToken, `บันทึกงานจริง ${order.srNumber} สำเร็จ\nสถานะ: ${statusLabel}`);
 };
 
 const handleActualStep = async (text, technician, lineUserId, replyToken, session) => {
@@ -727,7 +727,7 @@ const handleApprove = async (text, approver, replyToken) => {
   } catch (error) {
     return replyText(replyToken, serviceErrorText(error));
   }
-  return replyText(replyToken, `อนุมัติงาน ${srNumber} สำเร็จ ✅\nลูกค้า: ${order.customerName}`);
+  return replyText(replyToken, `อนุมัติงาน ${srNumber} สำเร็จ\nลูกค้า: ${order.customerName}`);
 };
 
 const LINE_CONTENT_URL = (messageId) => `https://api-data.line.me/v2/bot/message/${messageId}/content`;
@@ -748,7 +748,7 @@ const downloadLineImage = async (messageId) => {
 const startPhotoSession = (lineUserId, replyToken) => {
   lineSession.set(lineUserId, { flow: 'photo', step: 'srNumber', data: {} });
   return replyText(replyToken,
-    `ส่งรูปหน้างาน 📷 (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\nพิมพ์เลขที่งานที่จะแนบรูป เช่น SR-202609-0034`);
+    `ส่งรูปหน้างาน (พิมพ์ "หยุด" เพื่อหยุดได้ทุกเมื่อ)\n\nพิมพ์เลขที่งานที่จะแนบรูป เช่น SR-202609-0034`);
 };
 
 // จัดการข้อความตัวอักษรระหว่างอยู่ใน flow ส่งรูป ทั้งขั้นหา srNumber และคำว่าจบหรือเสร็จ
@@ -787,7 +787,7 @@ const handlePhotoTextStep = async (text, technician, lineUserId, replyToken, ses
   if (value === 'จบ' || value === 'เสร็จ') {
     lineSession.clear(lineUserId);
     return replyText(replyToken, data.count > 0
-      ? `แนบรูปสำเร็จ ${data.count} รูป ✅`
+      ? `แนบรูปสำเร็จ ${data.count} รูป`
       : 'ยังไม่ได้แนบรูปเลยครับ ส่งรูปมาได้เลย หรือพิมพ์ "หยุด" เพื่อยกเลิก');
   }
   return replyText(replyToken, 'ส่งรูปภาพมาได้เลยครับ หรือพิมพ์ "จบ" เมื่อเสร็จ');
@@ -825,10 +825,10 @@ const handlePhotoImage = async (messageId, technician, lineUserId, replyToken, s
   data.count += 1;
   if (data.count >= MAX_PHOTOS_PER_SESSION) {
     lineSession.clear(lineUserId);
-    return replyText(replyToken, `แนบรูปสำเร็จ ${data.count} รูป ✅ (ครบจำนวนสูงสุดต่อครั้งแล้ว)`);
+    return replyText(replyToken, `แนบรูปสำเร็จ ${data.count} รูป (ครบจำนวนสูงสุดต่อครั้งแล้ว)`);
   }
   lineSession.set(lineUserId, { flow: 'photo', step: 'awaitingPhoto', data });
-  return replyText(replyToken, `📷 รับรูปแล้ว (${data.count}) ส่งต่อได้อีก หรือพิมพ์ "จบ"`);
+  return replyText(replyToken, `รับรูปแล้ว (${data.count}) ส่งต่อได้อีก หรือพิมพ์ "จบ"`);
 };
 
 router.post('/webhook', async (req, res) => {

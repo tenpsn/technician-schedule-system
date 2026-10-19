@@ -16,7 +16,7 @@ function pad(n: number): string {
     <div class="dp">
       <button type="button" class="dp-field" (click)="toggle()" [disabled]="disabled">
         <span [class.placeholder]="!selected">{{ displayValue || placeholder || '' }}</span>
-        <span class="dp-icon">📅</span>
+        <span class="dp-icon"><app-icon name="calendar" [size]="15"></app-icon></span>
       </button>
 
       <div class="dp-panel" *ngIf="open" [style.top.px]="panelTop" [style.bottom.px]="panelBottom" [style.left.px]="panelLeft">

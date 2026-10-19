@@ -42,7 +42,6 @@
   --out-bg: #fafbfc;
   --out-ink: #c3c8ce;
 
-  --theme-glyph: '\263E'; /* ☾ */
   --radius: 10px;
 }
 
@@ -155,4 +154,115 @@ button:disabled {
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: padding-box;
+}
+
+/* ชุดลูกเล่นกลางของทุกหน้า ใช้ค่าเวลาและความโค้งชุดเดียวกัน */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur: 220ms;
+  --dur-slow: 420ms;
+}
+
+@keyframes pageIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes riseIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes rowIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes menuUp { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes popIn { 0% { opacity: 0; transform: scale(0.5); } 70% { opacity: 1; transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes bellRing { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(14deg); } 40% { transform: rotate(-12deg); } 60% { transform: rotate(8deg); } 80% { transform: rotate(-4deg); } }
+@keyframes rippleOut { from { transform: scale(0); opacity: 0.35; } to { transform: scale(1); opacity: 0; } }
+@keyframes spinOnce { from { transform: rotate(-90deg) scale(0.6); } to { transform: none; } }
+
+/* เปลี่ยนหน้าแล้วหน้าใหม่ค่อย ๆ ลอยขึ้นมา */
+router-outlet + * {
+  display: block;
+  animation: pageIn var(--dur-slow) var(--ease-out) backwards;
+}
+
+/* การ์ดและรายการค่อย ๆ โผล่ทีละอัน ใช้ backwards เพื่อให้จบแล้วไม่ไปทับท่าทางตอนชี้หรือกด */
+.card, .section, .list-card, .detail-card, .job-card, .login-card,
+.queue-item, .actual-item, .approval-item, .history-item {
+  animation: riseIn var(--dur-slow) var(--ease-out) backwards;
+}
+tbody tr { animation: rowIn var(--dur-slow) var(--ease-out) backwards; }
+
+:is(.card, .section, .list-card, .detail-card, .job-card, .queue-item, .actual-item, .approval-item, .history-item, tbody tr):nth-child(2) { animation-delay: 40ms; }
+:is(.card, .section, .list-card, .detail-card, .job-card, .queue-item, .actual-item, .approval-item, .history-item, tbody tr):nth-child(3) { animation-delay: 80ms; }
+:is(.card, .section, .list-card, .detail-card, .job-card, .queue-item, .actual-item, .approval-item, .history-item, tbody tr):nth-child(4) { animation-delay: 120ms; }
+:is(.card, .section, .list-card, .detail-card, .job-card, .queue-item, .actual-item, .approval-item, .history-item, tbody tr):nth-child(5) { animation-delay: 160ms; }
+:is(.card, .section, .list-card, .detail-card, .job-card, .queue-item, .actual-item, .approval-item, .history-item, tbody tr):nth-child(6) { animation-delay: 200ms; }
+:is(.card, .section, .list-card, .detail-card, .job-card, .queue-item, .actual-item, .approval-item, .history-item, tbody tr):nth-child(n+7) { animation-delay: 240ms; }
+
+/* ของที่กดได้ลอยขึ้นนิดหน่อยตอนชี้ */
+.queue-item, .job-card, .notif-item, .tech-row {
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), border-color var(--dur) ease, background-color var(--dur) ease;
+}
+.queue-item:hover, .job-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(8, 9, 11, 0.12);
+}
+.notif-item:hover, .tech-row:hover { transform: translateX(3px); }
+tbody tr { transition: background-color var(--dur) ease; }
+tbody tr:hover { background-color: var(--sel-bg); }
+
+/* ปุ่มยุบลงตอนกด และเปลี่ยนสีแบบนุ่ม */
+button, a {
+  transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur) ease, border-color var(--dur) ease,
+    color var(--dur) ease, box-shadow var(--dur) ease, filter var(--dur) ease, opacity var(--dur) ease;
+}
+button:not(:disabled):active { transform: scale(0.96); }
+
+input, textarea, select {
+  transition: border-color var(--dur) ease, box-shadow var(--dur) ease, background-color var(--dur) ease;
+}
+input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* เมนูและแผงแจ้งเตือนเลื่อนเปิด */
+.nav-dropdown-menu, .user-menu, .notif-panel {
+  transform-origin: top center;
+  animation: menuIn var(--dur) var(--ease-out) backwards;
+}
+.bottom-nav-menu {
+  transform-origin: bottom center;
+  animation: menuUp var(--dur) var(--ease-out) backwards;
+}
+.nav-caret { display: inline-block; transition: transform var(--dur) var(--ease-out); }
+
+/* ตัวเลขแจ้งเตือนเด้งตอนโผล่ กระดิ่งสั่นตอนชี้ */
+.badge, .count-badge { animation: popIn var(--dur-slow) var(--ease-spring) backwards; }
+.bell-btn:hover { animation: bellRing 0.7s ease; }
+.theme-btn:not(:disabled):active { transform: rotate(-30deg) scale(0.9); }
+
+/* คลื่นวงกลมตอนกดปุ่ม สร้างจาก app.component */
+.ripple-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  pointer-events: none;
+  animation: rippleOut 520ms var(--ease-out) forwards;
+}
+
+/* ตอนสลับธีมให้สีค่อย ๆ เปลี่ยนทั้งหน้า */
+html.theme-switching, html.theme-switching * {
+  transition: background-color 320ms ease, color 320ms ease, border-color 320ms ease !important;
+}
+
+/* คนที่ตั้งเครื่องให้ลดการเคลื่อนไหว จะเห็นหน้าสุดท้ายทันทีไม่มีแอนิเมชัน */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+  .ripple-host { display: none; }
 }

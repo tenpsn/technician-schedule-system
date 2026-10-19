@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { AuthService } from './services/auth.service';
 import { ThemeService } from './services/theme.service';
 import { I18nService } from './services/i18n.service';
@@ -23,7 +23,7 @@ const NOTIF_POLL_MS = 30000;
         <nav class="top-nav">
           <a routerLink="/calendar" routerLinkActive="active">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</a>
           <div class="nav-dropdown">
-            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">{{ i18n.t['navJobs'] }}<span class="nav-caret" [class.open]="showJobsMenu">▾</span></button>
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">{{ i18n.t['navJobs'] }}<span class="nav-caret" [class.open]="showJobsMenu"><app-icon name="chevron-down" [size]="12"></app-icon></span></button>
             <div class="nav-dropdown-menu" *ngIf="showJobsMenu">
               <button class="nav-dropdown-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
               <button class="nav-dropdown-item" (click)="goToCancelledOrders()">{{ i18n.t['navCancelled'] }}</button>
@@ -31,7 +31,7 @@ const NOTIF_POLL_MS = 30000;
           </div>
           <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">{{ i18n.t['navDashboard'] }}</a>
           <div class="nav-dropdown" *ngIf="auth.isSupervisor">
-            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}<span class="nav-caret" [class.open]="showCustomerMenu">▾</span></button>
+            <button class="nav-dropdown-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">{{ i18n.t['navHospitals'] }}<span class="nav-caret" [class.open]="showCustomerMenu"><app-icon name="chevron-down" [size]="12"></app-icon></span></button>
             <div class="nav-dropdown-menu" *ngIf="showCustomerMenu">
               <button class="nav-dropdown-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
               <button class="nav-dropdown-item" (click)="goToHospitalSettings()">{{ i18n.t['hospitalSettings'] }}</button>
@@ -43,7 +43,7 @@ const NOTIF_POLL_MS = 30000;
         <div class="spacer"></div>
 
         <div class="search-box" *ngIf="showScheduleSearch">
-          <span>⌕</span>
+          <span><app-icon name="search" [size]="15"></app-icon></span>
           <input [(ngModel)]="scheduleSearch.query" [placeholder]="i18n.t['searchPh']">
         </div>
 
@@ -61,15 +61,15 @@ const NOTIF_POLL_MS = 30000;
 
           <div class="user-menu" *ngIf="showUserMenu">
             <a class="user-menu-item" routerLink="/profile" routerLinkActive="active" (click)="showUserMenu = false">
-              <span class="user-menu-icon">👤</span>{{ i18n.t['myProfile'] }}
+              <span class="user-menu-icon"><app-icon name="user"></app-icon></span>{{ i18n.t['myProfile'] }}
             </a>
             <button class="user-menu-item danger" (click)="showUserMenu = false; confirmLogout()">
-              <span class="user-menu-icon">⎋</span>{{ i18n.t['logout'] }}
+              <span class="user-menu-icon"><app-icon name="log-out"></app-icon></span>{{ i18n.t['logout'] }}
             </button>
           </div>
         </div>
 
-        <button class="theme-btn" (click)="theme.toggle()" [title]="i18n.t['themeBtn']">{{ theme.glyph }}</button>
+        <button class="theme-btn" (click)="theme.toggle()" [title]="i18n.t['themeBtn']"><app-icon [name]="theme.mode === 'dark' ? 'sun' : 'moon'" [class.icon-sun]="theme.mode === 'dark'" [class.icon-moon]="theme.mode !== 'dark'" [size]="17"></app-icon></button>
 
         <div class="lang-switch">
           <button [class.on]="i18n.lang === 'th'" (click)="i18n.set('th')">TH</button>
@@ -78,7 +78,7 @@ const NOTIF_POLL_MS = 30000;
 
         <div class="notif-wrap">
           <button #bellBtn class="bell-btn" (click)="toggleNotifications(bellBtn)" [title]="i18n.t['notifications']">
-            🔔
+            <app-icon class="icon-bell" name="bell" [size]="18"></app-icon>
             <span class="badge" *ngIf="unreadCount > 0">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
           </button>
 
@@ -90,9 +90,12 @@ const NOTIF_POLL_MS = 30000;
             </div>
             <div class="notif-list">
               <div class="notif-item" *ngFor="let n of notifications" [class.unread]="!n.isRead" (click)="openNotification(n)">
-                <div class="notif-title">{{ i18n.notificationTitle(n) }}</div>
-                <div class="notif-message">{{ i18n.notificationMessage(n) }}</div>
-                <div class="notif-time mono">{{ n.createdAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+                <span class="notif-icon" [ngClass]="'tone-' + notificationIcon(n).tone"><app-icon [name]="notificationIcon(n).name" [size]="16"></app-icon></span>
+                <div class="notif-body">
+                  <div class="notif-title">{{ i18n.notificationTitle(n) }}</div>
+                  <div class="notif-message">{{ i18n.notificationMessage(n) }}</div>
+                  <div class="notif-time mono">{{ n.createdAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+                </div>
               </div>
               <div class="notif-empty" *ngIf="notifications.length === 0">{{ i18n.t['noNotifications'] }}</div>
             </div>
@@ -106,11 +109,11 @@ const NOTIF_POLL_MS = 30000;
 
       <nav class="bottom-nav" *ngIf="auth.isAuthenticated">
         <a routerLink="/calendar" routerLinkActive="active">
-          <span class="glyph">▦</span><span class="label">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</span>
+          <span class="glyph"><app-icon name="calendar" [size]="20"></app-icon></span><span class="label">{{ auth.isSupervisor ? i18n.t['navSchedule'] : i18n.t['navMySchedule'] }}</span>
         </a>
         <div class="bottom-nav-dropdown">
           <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/work-orders/new') || currentUrl.startsWith('/cancelled-orders')" (click)="toggleJobsMenu()">
-            <span class="glyph">✚</span><span class="label">{{ i18n.t['navJobs'] }}<span class="nav-caret up" [class.open]="showJobsMenu">▾</span></span>
+            <span class="glyph"><app-icon name="plus" [size]="20"></app-icon></span><span class="label">{{ i18n.t['navJobs'] }}<span class="nav-caret up" [class.open]="showJobsMenu"><app-icon name="chevron-down" [size]="12"></app-icon></span></span>
           </button>
           <div class="bottom-nav-menu" *ngIf="showJobsMenu">
             <button class="bottom-nav-menu-item" (click)="goToAddWork()">{{ i18n.t['navAdd'] }}</button>
@@ -118,11 +121,11 @@ const NOTIF_POLL_MS = 30000;
           </div>
         </div>
         <a *ngIf="auth.isSupervisor" routerLink="/dashboard" routerLinkActive="active">
-          <span class="glyph">▤</span><span class="label">{{ i18n.t['navDashboard'] }}</span>
+          <span class="glyph"><app-icon name="dashboard" [size]="20"></app-icon></span><span class="label">{{ i18n.t['navDashboard'] }}</span>
         </a>
         <div class="bottom-nav-dropdown" *ngIf="auth.isSupervisor">
           <button class="bottom-nav-toggle" [class.active]="currentUrl.startsWith('/settings/hospitals') || currentUrl.startsWith('/settings/contracts')" (click)="toggleCustomerMenu()">
-            <span class="glyph">⌂</span><span class="label">{{ i18n.t['navHospitals'] }}<span class="nav-caret up" [class.open]="showCustomerMenu">▾</span></span>
+            <span class="glyph"><app-icon name="building" [size]="20"></app-icon></span><span class="label">{{ i18n.t['navHospitals'] }}<span class="nav-caret up" [class.open]="showCustomerMenu"><app-icon name="chevron-down" [size]="12"></app-icon></span></span>
           </button>
           <div class="bottom-nav-menu" *ngIf="showCustomerMenu">
             <button class="bottom-nav-menu-item" (click)="goToContracts()">{{ i18n.t['contractSettings'] }}</button>
@@ -130,7 +133,7 @@ const NOTIF_POLL_MS = 30000;
           </div>
         </div>
         <a *ngIf="auth.isAdmin" routerLink="/settings/users" [class.active]="currentUrl.startsWith('/settings/users') || currentUrl.startsWith('/settings/history')">
-          <span class="glyph">👤</span><span class="label">{{ i18n.t['navUsers'] }}</span>
+          <span class="glyph"><app-icon name="user" [size]="20"></app-icon></span><span class="label">{{ i18n.t['navUsers'] }}</span>
         </a>
       </nav>
 
@@ -262,7 +265,15 @@ const NOTIF_POLL_MS = 30000;
     .link-btn:hover { text-decoration: underline; }
 
     .notif-list { max-height: 360px; overflow-y: auto; scrollbar-gutter: stable; }
-    .notif-item { padding: 11px 14px; border-bottom: 1px solid var(--line2); cursor: pointer; }
+    .notif-item { display: flex; gap: 11px; align-items: flex-start; padding: 11px 14px; border-bottom: 1px solid var(--line2); cursor: pointer; }
+    .notif-body { flex: 1; min-width: 0; }
+    .icon-bell, .icon-moon { color: #facc15; }
+    .icon-sun { color: #ef4444; }
+    .notif-icon { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; border: 1px solid; }
+    .notif-icon.tone-info { color: var(--info-text); background: var(--info-bg); border-color: var(--info-line); }
+    .notif-icon.tone-success { color: var(--success-text); background: var(--success-bg); border-color: var(--success-line); }
+    .notif-icon.tone-warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-line); }
+    .notif-icon.tone-danger { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-line); }
     .notif-item:last-child { border-bottom: none; }
     .notif-item:hover { background: var(--alt); }
     .notif-item.unread { background: var(--info-bg); }
@@ -395,8 +406,10 @@ export class AppComponent implements OnInit, OnDestroy {
     public scheduleSearch: ScheduleSearchService,
     private notificationService: NotificationService,
     private router: Router,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private zone: NgZone
   ) {
+    this.listenForRipples();
     this.currentUrl = this.router.url;
     this.router.events.subscribe(event => {
       if (event instanceof NavigationEnd) {
@@ -434,6 +447,42 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ตำแหน่งกล่องแจ้งเตือนคำนวณตอนเปิด ถ้าความกว้างจอเปลี่ยนระหว่างเปิดอยู่ให้ปิดไปก่อน กันกล่องค้างผิดที่
   // เช็คแค่ความกว้าง เพราะมือถือยิง resize ตอนเลื่อนจอแล้วแถบที่อยู่ซ่อนตัว ซึ่งเปลี่ยนแค่ความสูง
+  // วาดคลื่นวงกลมตรงจุดที่กดปุ่ม ทำนอก Angular จะได้ไม่ไปสั่งวาดหน้าจอใหม่ทุกครั้งที่กด
+  private listenForRipples() {
+    this.zone.runOutsideAngular(() => {
+      document.addEventListener('pointerdown', (event: PointerEvent) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>('button:not(:disabled), .queue-item, .job-card');
+        if (!target || target.classList.contains('no-ripple')) return;
+
+        if (getComputedStyle(target).position === 'static') target.style.position = 'relative';
+        const host = document.createElement('span');
+        host.className = 'ripple-host';
+        const rect = target.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height) * 2;
+        const ripple = document.createElement('span');
+        ripple.className = 'ripple';
+        ripple.style.width = ripple.style.height = `${size}px`;
+        ripple.style.left = `${event.clientX - rect.left - size / 2}px`;
+        ripple.style.top = `${event.clientY - rect.top - size / 2}px`;
+        host.appendChild(ripple);
+        target.appendChild(host);
+        ripple.addEventListener('animationend', () => host.remove());
+      });
+    });
+  }
+
+  // เลือกไอคอนเส้นและสีตามชนิดแจ้งเตือน ใช้แทนอีโมจิที่เคยอยู่หน้าหัวข้อ
+  notificationIcon(n: AppNotification): { name: string; tone: string } {
+    if (n.code === 'plan_approved') return { name: 'check-circle', tone: 'success' };
+    switch (n.type) {
+      case 'approval_needed': return { name: 'clipboard', tone: 'info' };
+      case 'rescheduled': return { name: 'rotate-ccw', tone: 'warn' };
+      case 'cancelled': return { name: 'ban', tone: 'danger' };
+      case 'overdue': return { name: 'alert-triangle', tone: 'danger' };
+      default: return { name: 'check-circle', tone: 'success' };
+    }
+  }
+
   @HostListener('window:resize')
   onWindowResize() {
     if (window.innerWidth !== this.notifOpenedAtWidth) this.showNotifications = false;

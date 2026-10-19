@@ -35,7 +35,7 @@ import { I18nService } from '../../services/i18n.service';
 
         <div class="search-bar">
           <div class="search-box">
-            <span>⌕</span>
+            <span><app-icon name="search" [size]="15"></app-icon></span>
             <input type="text" [(ngModel)]="filterText" [placeholder]="i18n.t['searchList']" (ngModelChange)="applyFilter()">
           </div>
           <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredHospitals.length }} / {{ hospitals.length }}</span>

@@ -5,7 +5,7 @@ const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
 const { isSupervisorRole, isBlockedByRegion, isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const { uploadPhotos, saveCompressedPhoto, deletePhotoFile } = require('../middleware/upload');
-const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, addPhotos, removePhoto } = require('../services/workOrderService');
+const { createWorkOrder, approveWorkOrder, rescheduleWorkOrder, cancelWorkOrder, logActualWork, verifyActualLog, rejectActualLog, addPhotos, removePhoto } = require('../services/workOrderService');
 const { sendServerError } = require('../utils/httpErrors');
 const { computeOverdue } = require('../utils/overdueCalc');
 const { WORK_TYPES, REPAIR_TYPE, INSTALLATION_TYPE, OTHER_TYPE } = require('../config/workTypes');
@@ -24,12 +24,12 @@ const DETAIL_INCLUDE = [
   { model: User, as: 'cancelledBy', attributes: APPROVER_ATTRS }
 ];
 
-// ประวัติอนุมัติ เลื่อน และบันทึกผลเป็น JSONB เก็บแค่ id กับชื่อ ต้องดึงรูปโปรไฟล์แยกมาแนบไว้ใน people
+// ประวัติอนุมัติ เลื่อน บันทึกผล และผู้ตรวจรับเป็น JSONB เก็บแค่ id กับชื่อ ต้องดึงรูปโปรไฟล์แยกมาแนบไว้ใน people
 const withPeople = async (order) => {
   const ids = new Set([
     ...(order.approvalHistory || []).map((a) => a.approvedById),
     ...(order.rescheduleHistory || []).map((h) => h.changedBy),
-    ...(order.actualLog || []).map((l) => l.recordedById)
+    ...(order.actualLog || []).flatMap((l) => [l.recordedById, l.verifiedById])
   ].filter(Boolean));
   const users = ids.size ? await User.findAll({ where: { id: [...ids] }, attributes: APPROVER_ATTRS }) : [];
   const json = order.toJSON();
@@ -228,6 +228,66 @@ router.patch('/:id/actual', protect, async (req, res) => {
       return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
     }
     logger.error(`Update actual error: ${error.message}`);
+    sendServerError(res);
+  }
+});
+
+// ตรวจรับบันทึกงานจริงทีละรายการ สำหรับหัวหน้างานและ admin
+router.patch('/:id/actual/:index/verify', protect, authorize('supervisor', 'admin'), async (req, res) => {
+  try {
+    const logIndex = Number(req.params.index);
+    if (!Number.isInteger(logIndex) || logIndex < 0) {
+      return res.status(400).json({ code: 'actual_log_not_found', message: 'Actual log entry not found' });
+    }
+
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
+
+    if (!order) {
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
+    }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
+
+    await verifyActualLog(order, logIndex, {
+      verifiedById: req.user.id, verifiedByName: req.user.fullName, actorLabel: req.user.username
+    });
+
+    res.json(await withPeople(order));
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
+    }
+    logger.error(`Verify actual error: ${error.message}`);
+    sendServerError(res);
+  }
+});
+
+// ตรวจรับไม่ผ่าน สร้างงานต่อด้วยเลข SR เดิมเติมลำดับต่อท้าย สำหรับหัวหน้างานและ admin
+router.patch('/:id/actual/:index/reject', protect, authorize('supervisor', 'admin'), async (req, res) => {
+  try {
+    const logIndex = Number(req.params.index);
+    if (!Number.isInteger(logIndex) || logIndex < 0) {
+      return res.status(400).json({ code: 'actual_log_not_found', message: 'Actual log entry not found' });
+    }
+
+    const order = await WorkOrder.findByPk(req.params.id, { include: DETAIL_INCLUDE });
+
+    if (!order) {
+      return res.status(404).json({ code: 'work_order_not_found', message: 'Work order not found' });
+    }
+    if (isBlockedByRegion(req.user, order)) return sendRegionForbidden(res);
+
+    const { followUp } = await rejectActualLog(order, logIndex, {
+      plannedDate: req.body.plannedDate, description: req.body.description,
+      plannedStartTime: req.body.plannedStartTime, plannedEndTime: req.body.plannedEndTime,
+      verifiedById: req.user.id, verifiedByName: req.user.fullName, actorLabel: req.user.username
+    });
+
+    res.json({ order: await withPeople(order), followUp: { _id: followUp.id, srNumber: followUp.srNumber } });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ code: error.code, data: error.data, message: error.message });
+    }
+    logger.error(`Reject actual error: ${error.message}`);
     sendServerError(res);
   }
 });

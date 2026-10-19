@@ -9,7 +9,7 @@ const { findSupervisorsToNotify } = require('../services/workOrderService');
 
 // รันทุก 30 นาที ให้ตรงกับตัวเลือกเวลาในฟอร์มเว็บที่มีช่วงห่างกัน 30 นาทีเท่ากัน ดู time picker component.ts
 cron.schedule('*/30 * * * *', async () => {
-  logger.info('🔄 Running overdue check...');
+  logger.info('Running overdue check...');
 
   const now = new Date();
 
@@ -44,7 +44,7 @@ cron.schedule('*/30 * * * *', async () => {
           await Notification.create({
             recipientId: order.technicianId,
             type: 'overdue',
-            title: '⚠️ งานค้างเกินกำหนด',
+            title: 'งานค้างเกินกำหนด',
             message: `งาน ${order.srNumber} (${order.customerName}) ค้าง ${days} วัน กรุณาอัปเดตสถานะหรือเลื่อนงาน`,
             code: 'overdue_own',
             data: { srNumber: order.srNumber, customer: order.customerName, days },
@@ -57,7 +57,7 @@ cron.schedule('*/30 * * * *', async () => {
             await Notification.create({
               recipientId: sup.id,
               type: 'overdue',
-              title: '⚠️ แจ้งเตือนงานค้าง',
+              title: 'แจ้งเตือนงานค้าง',
               message: `งาน ${order.srNumber} ของ ${order.technician.fullName} ค้าง ${days} วัน`,
               code: 'overdue_team',
               data: { srNumber: order.srNumber, technician: order.technician.fullName, days },
@@ -70,7 +70,7 @@ cron.schedule('*/30 * * * *', async () => {
       }
     }
 
-    logger.info('✅ Overdue check completed');
+    logger.info('Overdue check completed');
   } catch (error) {
     logger.error(`Overdue check error: ${error.message}`);
   }

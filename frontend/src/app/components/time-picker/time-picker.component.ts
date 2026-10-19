@@ -17,7 +17,7 @@ const STEP_MINUTES = 30;
     <div class="tp">
       <button type="button" class="tp-field" (click)="toggle()" [disabled]="disabled">
         <span [class.placeholder]="!value" class="mono">{{ value || placeholder || '--:--' }}</span>
-        <span class="tp-icon">🕒</span>
+        <span class="tp-icon"><app-icon name="clock" [size]="15"></app-icon></span>
       </button>
 
       <div class="tp-panel" *ngIf="open" [style.top.px]="panelTop" [style.bottom.px]="panelBottom" [style.left.px]="panelLeft" [style.width.px]="panelWidth">

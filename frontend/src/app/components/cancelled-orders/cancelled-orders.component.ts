@@ -24,7 +24,7 @@ import { I18nService } from '../../services/i18n.service';
 
         <div class="search-bar" *ngIf="!loading">
           <div class="search-box">
-            <span>⌕</span>
+            <span><app-icon name="search" [size]="15"></app-icon></span>
             <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']" (ngModelChange)="applyFilter()">
           </div>
           <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredOrders.length }} / {{ orders.length }}</span>

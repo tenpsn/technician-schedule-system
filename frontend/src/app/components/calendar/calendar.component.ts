@@ -75,7 +75,7 @@ import { Router } from '@angular/router';
             <span class="mono">{{ i18n.t['team'] }}</span>
             <span class="collapsible-right">
               <span class="count-badge">{{ technicians.length }}</span>
-              <span class="collapse-caret" [class.collapsed]="teamCollapsed">▾</span>
+              <span class="collapse-caret" [class.collapsed]="teamCollapsed"><app-icon name="chevron-down" [size]="12"></app-icon></span>
             </span>
           </button>
           <div class="tech-list" *ngIf="!teamCollapsed">
@@ -100,13 +100,14 @@ import { Router } from '@angular/router';
             <span class="mono">{{ i18n.t['queueTitle'] }}</span>
             <span class="collapsible-right">
               <span class="count-badge tone-warn-badge">{{ pendingApproval.length }}</span>
-              <span class="collapse-caret" [class.collapsed]="queueCollapsed">▾</span>
+              <span class="collapse-caret" [class.collapsed]="queueCollapsed"><app-icon name="chevron-down" [size]="12"></app-icon></span>
             </span>
           </button>
           <div class="queue-list" *ngIf="!queueCollapsed">
             <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
               <div class="queue-row">
                 <span class="mono">{{ o.srNumber }}</span>
+                <span class="queue-kind" [class.queue-kind-verify]="o.status !== 'pending_approval'">{{ o.status === 'pending_approval' ? i18n.t['pendingApprovalTag'] : i18n.t['pendingVerify'] }}</span>
                 <span class="mono">{{ o.plannedDate | localDate:'d MMM':'UTC' }}</span>
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
@@ -123,7 +124,7 @@ import { Router } from '@angular/router';
             <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
             <span class="collapsible-right">
               <span class="count-badge tone-danger-badge">{{ overdueOrders.length }}</span>
-              <span class="collapse-caret" [class.collapsed]="overdueCollapsed">▾</span>
+              <span class="collapse-caret" [class.collapsed]="overdueCollapsed"><app-icon name="chevron-down" [size]="12"></app-icon></span>
             </span>
           </button>
           <div class="overdue-list" *ngIf="!overdueCollapsed">
@@ -143,7 +144,7 @@ import { Router } from '@angular/router';
             <span class="mono tone-danger">{{ i18n.t['overdueAlert'] }}</span>
             <span class="collapsible-right">
               <span class="count-badge tone-danger-badge">{{ myOverdueOrders.length }}</span>
-              <span class="collapse-caret" [class.collapsed]="myOverdueCollapsed">▾</span>
+              <span class="collapse-caret" [class.collapsed]="myOverdueCollapsed"><app-icon name="chevron-down" [size]="12"></app-icon></span>
             </span>
           </button>
           <div class="overdue-list" *ngIf="!myOverdueCollapsed">
@@ -161,13 +162,14 @@ import { Router } from '@angular/router';
             <span class="mono">{{ i18n.t['myPendingTitle'] }}</span>
             <span class="collapsible-right">
               <span class="count-badge tone-warn-badge">{{ pendingApproval.length }}</span>
-              <span class="collapse-caret" [class.collapsed]="myPendingCollapsed">▾</span>
+              <span class="collapse-caret" [class.collapsed]="myPendingCollapsed"><app-icon name="chevron-down" [size]="12"></app-icon></span>
             </span>
           </button>
           <div class="queue-list" *ngIf="!myPendingCollapsed">
             <div *ngFor="let o of pendingApproval" class="queue-item" (click)="viewOrder(o._id)">
               <div class="queue-row">
                 <span class="mono">{{ o.srNumber }}</span>
+                <span class="queue-kind" [class.queue-kind-verify]="o.status !== 'pending_approval'">{{ o.status === 'pending_approval' ? i18n.t['pendingApprovalTag'] : i18n.t['pendingVerify'] }}</span>
                 <span class="mono">{{ o.plannedDate | localDate:'d MMM':'UTC' }}</span>
               </div>
               <div class="queue-customer">{{ o.customerName }}</div>
@@ -350,7 +352,12 @@ import { Router } from '@angular/router';
     .queue-list { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 12px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
     .queue-item { border-radius: var(--radius); border: 1px solid var(--line); border-left: 4px solid #d98b1e; background: var(--surface); padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
     .queue-item:hover { border-color: var(--accent); }
-    .queue-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--sub); }
+    .queue-kind { font-size: 10.5px; font-weight: 600; color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 999px; padding: 1px 7px; }
+    .queue-kind-verify { color: #0d8f72; background: transparent; border-color: #0d8f72; }
+    .queue-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--sub); }
+    .queue-row > span { white-space: nowrap; flex: none; }
+    .queue-row > span:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .queue-row > span:last-child { margin-left: auto; }
     .queue-customer { font-size: 14px; font-weight: 600; }
     .queue-sub { font-size: 12px; color: var(--sub); }
     .queue-window { font-size: 11px; color: var(--sub); }
@@ -542,10 +549,15 @@ export class CalendarComponent implements OnInit, OnDestroy {
     return list;
   }
 
+  // รวมงานรออนุมัติแผน กับงานที่มีบันทึกงานจริงรอหัวหน้าตรวจรับ
   get pendingApproval(): WorkOrder[] {
     return this.workOrders
-      .filter(o => o.status === 'pending_approval')
+      .filter(o => o.status === 'pending_approval' || this.hasPendingVerify(o))
       .sort((a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime());
+  }
+
+  hasPendingVerify(order: WorkOrder): boolean {
+    return order.status !== 'cancelled' && (order.actualLog || []).some(log => !log.verifiedAt);
   }
 
   // โหมดงานของฉัน workOrders มีแต่งานตัวเองอยู่แล้ว กรองตรงนี้ได้เลย ไม่ต้องเรียก endpoint ของ supervisor
@@ -559,7 +571,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
     const list = this.visibleOrders;
     return {
       total: list.length,
-      queued: list.filter(o => o.status === 'pending_approval').length
+      queued: list.filter(o => o.status === 'pending_approval' || this.hasPendingVerify(o)).length
     };
   }
 

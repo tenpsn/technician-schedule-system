@@ -31,7 +31,7 @@ const DATE_FIELDS = ['startDate', 'endDate', 'maVisitDate'];
             <button *ngFor="let t of types" type="button" [class.on]="entityType === t.value" (click)="setType(t.value)">{{ i18n.t[t.key] }}</button>
           </div>
           <div class="search-box">
-            <span>⌕</span>
+            <span><app-icon name="search" [size]="15"></app-icon></span>
             <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['auditSearchPh']" (ngModelChange)="onSearchChange()">
           </div>
           <span class="mono count">{{ i18n.t['allOf'] }} {{ total }}</span>

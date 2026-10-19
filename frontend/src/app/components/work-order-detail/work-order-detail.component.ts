@@ -14,7 +14,20 @@ const REASON_LABELS_TH = ['ลูกค้าขอยกเลิก', 'อุ�
 const REASON_KEYS_EN = ['Customer requested cancellation (switched provider)', 'Parts/equipment not ready', 'Higher-priority job conflict', 'Weather', 'Customer postponed indefinitely', 'Other (specify)'];
 const REASON_LABELS_EN = ['Customer cancelled', 'Parts not ready', 'Urgent job conflict', 'Weather', 'Postponed indefinitely', 'Other'];
 
-type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' | 'postpone-done' | 'actual' | 'actual-done' | 'photos' | 'photos-done' | 'photo-delete' | null;
+interface TimelineEntry {
+  kind: 'actual' | 'approval' | 'reschedule';
+  number: number;
+  time: number;
+  data: any;
+}
+
+// แปลงวันที่เป็นตัวเลขไว้เรียง ถ้าไม่มีวันที่ให้อยู่ท้ายสุด
+function toTime(value?: string | null): number {
+  const time = value ? new Date(value).getTime() : NaN;
+  return isNaN(time) ? 0 : time;
+}
+
+type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' | 'postpone-done' | 'actual' | 'actual-done' | 'photos' | 'photos-done' | 'photo-delete' | 'reject' | null;
 
 @Component({
   selector: 'app-work-order-detail',
@@ -31,11 +44,11 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
 
         <div class="card-body">
           <div class="alert-warn" *ngIf="order.isOverdue">
-            ⚠ {{ i18n.t['overdueAlert'] }}: {{ order.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}
+            {{ i18n.t['overdueAlert'] }}: {{ order.overdueDays }} {{ i18n.t['overdueDaysSuffix'] }}
           </div>
 
           <div class="alert-muted" *ngIf="order.status === 'cancelled'">
-            <div class="alert-title">✕ {{ i18n.t['cancelledInfo'] }}</div>
+            <div class="alert-title">{{ i18n.t['cancelledInfo'] }}</div>
             <div class="meta-grid">
               <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledBy'] }}</div><div class="meta-value person"><img *ngIf="auth.resolveAvatarUrl(order.cancelledBy?.avatarUrl) as src" class="person-avatar" [src]="src" alt="">{{ order.cancelledBy?.fullName }}</div></div>
               <div class="meta-item"><div class="meta-label">{{ i18n.t['cancelledAt'] }}</div><div class="meta-value">{{ order.cancelledAt | localDate:'dd/MM/yyyy HH:mm' }}</div></div>
@@ -51,6 +64,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <div class="meta-item"><div class="meta-label">{{ i18n.t['site'] }}</div><div class="meta-value">{{ order.customerLocation }}</div></div>
             <div class="meta-item"><div class="meta-label">{{ i18n.t['jobType'] }}</div><div class="meta-value">{{ i18n.typeLabel(order.workType) }}</div></div>
             <div class="meta-item"><div class="meta-label">{{ i18n.t['owner'] }}</div><div class="meta-value person"><img *ngIf="auth.resolveAvatarUrl(order.technician?.avatarUrl) as src" class="person-avatar" [src]="src" alt="">{{ order.technician?.fullName }}</div></div>
+            <div class="meta-item" *ngIf="order.parentSrNumber"><div class="meta-label">{{ i18n.t['parentJob'] }}</div><div class="meta-value"><a class="job-link mono" (click)="goToOrder(order.parentWorkOrderId)">{{ order.parentSrNumber }}</a></div></div>
           </div>
 
           <div class="section">
@@ -64,12 +78,22 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             </div>
           </div>
 
-          <div class="section" *ngIf="order.actualLog && order.actualLog.length > 0">
-            <div class="section-title">✓ Actual ({{ order.actualLog.length }})</div>
-            <div class="actual-item" *ngFor="let log of order.actualLog; let i = index">
+          <div class="section" *ngIf="timeline.length > 0">
+            <div class="section-title">{{ i18n.t['jobTimelineLabel'] }} ({{ timeline.length }})</div>
+            <ng-container *ngFor="let entry of timeline">
+            <div class="actual-item" *ngIf="entry.kind === 'actual'">
+              <ng-container *ngIf="entry.data as log">
               <div class="actual-item-head">
-                <span class="actual-item-badge">#{{ i + 1 }}</span>
+                <span class="actual-item-badge">Actual #{{ entry.number }}</span>
                 <span class="mono">{{ log.actualDate | localDate:'dd/MM/yyyy':'UTC' }} · {{ log.actualStartTime }} - {{ log.actualEndTime }}</span>
+                <span class="spacer"></span>
+                <span class="verify-pending" *ngIf="!log.verifiedAt">{{ i18n.t['pendingVerify'] }}</span>
+                <ng-container *ngIf="canVerifyActual && !log.verifiedAt">
+                  <button type="button" class="btn-reject" [disabled]="verifyingIndex !== null" (click)="openRejectForm(entry.number - 1)">{{ i18n.t['rejectActual'] }}</button>
+                  <button type="button" class="btn-verify" [disabled]="verifyingIndex !== null" (click)="verifyActual(entry.number - 1)">
+                    {{ verifyingIndex === entry.number - 1 ? i18n.t['verifyingActual'] : i18n.t['verifyActual'] }}
+                  </button>
+                </ng-container>
               </div>
               <div class="field-list">
                 <div class="field-row" *ngIf="log.actualLocation"><span class="field-label">{{ i18n.t['actualLocation'] }}</span><span class="field-value">{{ log.actualLocation }}</span></div>
@@ -88,29 +112,33 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
                 </div>
               </div>
               <div class="history-by">{{ i18n.t['byWord'] }}: <img *ngIf="personAvatar(log.recordedById) as src" class="by-avatar" [src]="src" alt="">{{ recordedByName(log) }}<ng-container *ngIf="log.recordedAt"> · {{ log.recordedAt | localDate:'dd/MM/yyyy HH:mm' }}</ng-container></div>
+              <div class="history-by rejected-by" *ngIf="log.verifyResult === 'rejected'">{{ i18n.t['rejectedBy'] }}: <img *ngIf="personAvatar(log.verifiedById) as src" class="by-avatar" [src]="src" alt="">{{ log.verifiedByName || '—' }} · {{ log.verifiedAt | localDate:'dd/MM/yyyy HH:mm' }}
+                · {{ i18n.t['followUpJob'] }} <a class="job-link mono" (click)="goToOrder(log.followUpWorkOrderId)">{{ log.followUpSrNumber }}</a>
+              </div>
+              <div class="history-by verified-by" *ngIf="log.verifiedAt && log.verifyResult !== 'rejected'">{{ i18n.t['verifiedBy'] }}: <img *ngIf="personAvatar(log.verifiedById) as src" class="by-avatar" [src]="src" alt="">{{ log.verifiedByName || '—' }} · {{ log.verifiedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+              </ng-container>
             </div>
-          </div>
 
-          <div class="section" *ngIf="order.approvalHistory && order.approvalHistory.length > 0">
-            <div class="section-title">✓ {{ i18n.t['approvalHistoryLabel'] }}</div>
-            <div class="approval-item" *ngFor="let a of order.approvalHistory; let i = index">
-              <div class="history-date mono">#{{ i + 1 }} · {{ a.approvedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+            <div class="approval-item" *ngIf="entry.kind === 'approval'">
+              <ng-container *ngIf="entry.data as a">
+              <div class="history-date mono">{{ i18n.t['approvedWord'] }} #{{ entry.number }} · {{ a.approvedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
               <div class="history-by">{{ i18n.t['byWord'] }}: <img *ngIf="personAvatar(a.approvedById) as src" class="by-avatar" [src]="src" alt="">{{ a.approvedByName || '—' }}</div>
               <div class="history-reason" *ngIf="a.approvalNote">{{ i18n.t['approvalNoteLabel'] }}: {{ a.approvalNote }}</div>
+              </ng-container>
             </div>
-          </div>
 
-          <div class="section" *ngIf="order.rescheduleHistory && order.rescheduleHistory.length > 0">
-            <div class="section-title">↻ {{ i18n.t['rescheduleHistory'] }}</div>
-            <div class="history-item" *ngFor="let h of order.rescheduleHistory">
+            <div class="history-item" *ngIf="entry.kind === 'reschedule'">
+              <ng-container *ngIf="entry.data as h">
               <div class="history-date mono">{{ h.fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ h.toDate | localDate:'dd/MM/yyyy':'UTC' }}</div>
               <div class="history-reason">{{ i18n.t['reasonWord'] }}: {{ h.reason }}</div>
               <div class="history-by">{{ i18n.t['byWord'] }}: <img *ngIf="personAvatar(h.changedBy) as src" class="by-avatar" [src]="src" alt="">{{ h.changedByName || '—' }} · {{ h.changedAt | localDate:'dd/MM/yyyy HH:mm' }}</div>
+              </ng-container>
             </div>
+            </ng-container>
           </div>
 
           <div class="section" *ngIf="order.photos && order.photos.length > 0">
-            <div class="section-title">📷 {{ i18n.t['photosLabel'] }} ({{ order.photos.length }})</div>
+            <div class="section-title">{{ i18n.t['photosLabel'] }} ({{ order.photos.length }})</div>
             <div class="photo-grid">
               <div class="photo-thumb-wrap" *ngFor="let p of order.photos">
                 <a [href]="photoUrl(p)" target="_blank">
@@ -127,7 +155,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           <button *ngIf="canCancel" (click)="openCancel()" class="btn-cancel">{{ i18n.t['cancelJob'] }}</button>
           <button *ngIf="canApprove" (click)="showApproveModal = true" class="btn-approve">{{ i18n.t['approvePlan'] }}</button>
           <button *ngIf="canUpdateActual" (click)="openActualForm()" class="btn-update">{{ i18n.t['updateStatus'] }}</button>
-          <button *ngIf="canUploadPhotos" (click)="openPhotoUploadForm()" class="btn-photo">📷 {{ i18n.t['uploadPhotos'] }}</button>
+          <button *ngIf="canUploadPhotos" (click)="openPhotoUploadForm()" class="btn-photo">{{ i18n.t['uploadPhotos'] }}</button>
         </div>
       </div>
 
@@ -135,7 +163,6 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
       <div *ngIf="showCancelForm" class="modal-overlay">
         <div class="modal-card">
           <div class="modal-icon-row">
-            <span class="modal-icon st-danger">✕</span>
             <div>
               <div class="modal-title">{{ i18n.t['cancelJob'] }}</div>
               <div class="modal-sub mono">{{ order.srNumber }} · {{ order.customerName }}</div>
@@ -143,7 +170,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
           </div>
 
           <ng-container *ngIf="cancelStage === 'edit'">
-            <div class="warn-box">⚠ {{ i18n.t['cancelWarn'] }}</div>
+            <div class="warn-box">{{ i18n.t['cancelWarn'] }}</div>
             <form [formGroup]="cancelForm" (ngSubmit)="goConfirmCancelStage()">
               <label class="field">
                 <span>{{ i18n.t['cancelReason'] }} *</span>
@@ -165,7 +192,7 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
               <div class="mono kicker-strong">{{ i18n.t['confirmStep'] }}</div>
               <div class="review-title">{{ i18n.t['confirmCancelQ'] }} {{ order.srNumber }}</div>
               <div class="review-line">{{ i18n.t['reasonWord'] }}: {{ cancelForm.value.cancelReason }}</div>
-              <div class="review-warn">⚠ {{ i18n.t['irreversible'] }}</div>
+              <div class="review-warn">{{ i18n.t['irreversible'] }}</div>
             </div>
             <div class="modal-actions">
               <button type="button" [disabled]="busy === 'cancel'" (click)="confirmCancel()" class="btn-cancel">{{ confirmCancelLabel }}</button>
@@ -179,7 +206,6 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
       <div *ngIf="showApproveModal" class="modal-overlay">
         <div class="modal-card modal-card-narrow">
           <div class="modal-icon-row">
-            <span class="modal-icon st-info">✓</span>
             <div class="modal-title">{{ i18n.t['approveTitle'] }}</div>
           </div>
           <div class="modal-body-text">{{ i18n.t['approveBody'] }}</div>
@@ -196,6 +222,37 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
             <button type="button" [disabled]="busy === 'approve'" (click)="confirmApprove()" class="btn-approve">{{ approveConfirmLabel }}</button>
             <button type="button" [disabled]="busy === 'approve'" (click)="showApproveModal = false; approvalNote = ''" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Reject actual modal -->
+      <div *ngIf="rejectLogIndex !== null" class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-icon-row">
+            <div>
+              <div class="modal-title">{{ i18n.t['rejectTitle'] }}</div>
+              <div class="modal-sub mono">{{ order.srNumber }} · Actual #{{ rejectLogIndex + 1 }}</div>
+            </div>
+          </div>
+          <div class="modal-body-text">{{ i18n.t['rejectBody'] }}</div>
+          <form [formGroup]="rejectForm" (ngSubmit)="submitReject()">
+            <label class="field">
+              <span>{{ i18n.t['followUpDate'] }} *</span>
+              <app-date-picker formControlName="plannedDate"></app-date-picker>
+            </label>
+            <div class="field-row-pair">
+              <label class="field"><span>{{ i18n.t['startTime'] }}</span><app-time-picker formControlName="plannedStartTime"></app-time-picker></label>
+              <label class="field"><span>{{ i18n.t['endTime'] }}</span><app-time-picker formControlName="plannedEndTime"></app-time-picker></label>
+            </div>
+            <label class="field">
+              <span>{{ i18n.t['followUpDescription'] }} *</span>
+              <textarea formControlName="description" rows="4"></textarea>
+            </label>
+            <div class="modal-actions">
+              <button type="submit" [disabled]="busy === 'reject'" class="btn-cancel">{{ busy === 'reject' ? i18n.t['saving'] : i18n.t['rejectConfirm'] }}</button>
+              <button type="button" [disabled]="busy === 'reject'" (click)="closeRejectForm()" class="btn-ghost">{{ i18n.t['cancel'] }}</button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -272,12 +329,11 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
       <!-- Photo upload modal -->
       <div *ngIf="showPhotoUploadForm" class="modal-overlay">
         <div class="modal-card modal-card-narrow">
-          <div class="modal-title">📷 {{ i18n.t['uploadPhotos'] }}</div>
+          <div class="modal-title">{{ i18n.t['uploadPhotos'] }}</div>
           <div class="field">
             <span>{{ i18n.t['selectPhotos'] }}</span>
             <label class="file-drop">
               <input type="file" accept="image/*" multiple (change)="onPhotosSelected($event)">
-              <span class="file-drop-icon">📷</span>
               <span class="file-drop-text">{{ i18n.t['selectPhotos'] }}</span>
             </label>
             <span class="field-hint">{{ photoSizeLimitText }}</span>
@@ -363,6 +419,14 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     .actual-item-head { display: flex; align-items: center; gap: 10px; font-weight: 700; }
     .actual-item-badge { background: #0d8f72; color: #fff; border-radius: 999px; font-size: 11px; padding: 2px 9px; }
     .actual-item .field-list { margin-top: 8px; }
+    .verify-pending { font-size: 11.5px; font-weight: 600; color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 999px; padding: 2px 10px; }
+    .btn-verify { height: 32px; padding: 0 14px; border-radius: var(--radius); border: 1px solid #0b7a5f; background: #0d8f72; color: #fff; font-size: 12.5px; font-weight: 700; }
+    .btn-verify:disabled, .btn-reject:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-reject { height: 32px; padding: 0 14px; border-radius: var(--radius); border: 1px solid #a5320c; background: transparent; color: #d94a20; font-size: 12.5px; font-weight: 700; }
+    .btn-reject:hover { background: var(--danger-bg); }
+    .rejected-by { color: #d94a20; margin-top: 4px; }
+    .job-link { color: var(--accent); cursor: pointer; text-decoration: underline; font-weight: 700; }
+    .verified-by { color: #0d8f72; margin-top: 4px; }
     .actual-item .field-row:last-child { border-bottom: none; }
 
     .actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line2); background: var(--alt); }
@@ -387,7 +451,6 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     }
     .modal-card-narrow { max-width: 460px; }
     .modal-icon-row { display: flex; align-items: center; gap: 12px; }
-    .modal-icon { width: 38px; height: 38px; flex: none; border-radius: 12px; display: grid; place-items: center; font-size: 16px; }
     .modal-title { font-size: 19px; font-weight: 700; }
     .modal-sub { font-size: 11.5px; color: var(--sub); }
     .modal-body-text { font-size: 14px; color: var(--sub); line-height: 1.65; margin-top: 12px; }
@@ -430,7 +493,6 @@ type Busy = 'approve' | 'approve-done' | 'cancel' | 'cancel-done' | 'postpone' |
     }
     .file-drop:hover { border-color: var(--accent); }
     .file-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-    .file-drop-icon { font-size: 22px; }
     .file-drop-text { font-size: 13px; font-weight: 600; color: var(--sub); }
     .field-hint { display: block; margin-top: 6px; font-size: 11.5px; color: var(--sub); }
 
@@ -467,6 +529,9 @@ export class WorkOrderDetailComponent implements OnInit {
   selectedPhotoPreviews: string[] = [];
   deletePhotoTarget: string | null = null;
   approvalNote = '';
+  verifyingIndex: number | null = null;
+  rejectLogIndex: number | null = null;
+  rejectForm: FormGroup;
   cancelStage: 'edit' | 'confirm' = 'edit';
   busy: Busy = null;
   actualForm: FormGroup;
@@ -474,6 +539,8 @@ export class WorkOrderDetailComponent implements OnInit {
   cancelForm: FormGroup;
   private repairType = '';
   private installationType = '';
+  private timelineSource: WorkOrder | null = null;
+  private timelineCache: TimelineEntry[] = [];
 
   constructor(
     private route: ActivatedRoute,
@@ -501,16 +568,26 @@ export class WorkOrderDetailComponent implements OnInit {
       reason: ['', Validators.required]
     });
 
+    this.rejectForm = this.fb.group({
+      plannedDate: ['', Validators.required],
+      plannedStartTime: [''],
+      plannedEndTime: [''],
+      description: ['', Validators.required]
+    });
+
     this.cancelForm = this.fb.group({
       cancelReason: ['', Validators.required]
     });
   }
 
   ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id) {
-      this.loadOrder(id);
-    }
+    // ฟังการเปลี่ยน id ด้วย เพราะกดลิงก์ไปงานต่อหรืองานต้นทางจะใช้หน้าเดิม ไม่ได้สร้างหน้าใหม่
+    this.route.paramMap.subscribe(params => {
+      const id = params.get('id');
+      if (id) {
+        this.loadOrder(id);
+      }
+    });
     this.workOrderService.getWorkTypes().subscribe(meta => {
       this.repairType = meta.repairType;
       this.installationType = meta.installationType;
@@ -608,6 +685,24 @@ export class WorkOrderDetailComponent implements OnInit {
 
   personAvatar(userId?: string | null): string | null {
     return userId ? this.auth.resolveAvatarUrl(this.order?.people?.[userId]?.avatarUrl) : null;
+  }
+
+  // รวม actual อนุมัติ และเลื่อนงาน เป็นรายการเดียว เรียงจากใหม่ไปเก่า
+  // เก็บผลไว้ตามตัวงาน จะได้ไม่สร้างรายการใหม่ทุกรอบที่หน้าจอวาดใหม่
+  get timeline(): TimelineEntry[] {
+    if (this.timelineSource === this.order) return this.timelineCache;
+    const order = this.order;
+    const entries: TimelineEntry[] = [];
+    (order?.actualLog || []).forEach((log: any, i: number) =>
+      entries.push({ kind: 'actual', number: i + 1, time: toTime(log.recordedAt || log.actualDate), data: log }));
+    (order?.approvalHistory || []).forEach((a, i) =>
+      entries.push({ kind: 'approval', number: i + 1, time: toTime(a.approvedAt), data: a }));
+    (order?.rescheduleHistory || []).forEach((h, i) =>
+      entries.push({ kind: 'reschedule', number: i + 1, time: toTime(h.changedAt), data: h }));
+    entries.sort((a, b) => b.time - a.time);
+    this.timelineSource = order;
+    this.timelineCache = entries;
+    return entries;
   }
 
   // บันทึกเก่าก่อนมีการเก็บชื่อ ถ้าคนบันทึกคือช่างเจ้าของงานก็ยังรู้ชื่อได้จากตัวงาน
@@ -882,6 +977,70 @@ export class WorkOrderDetailComponent implements OnInit {
         this.toastr.error(this.i18n.errorMessage(err));
       }
     });
+  }
+
+  get canVerifyActual(): boolean {
+    return this.auth.isSupervisor && !this.isBlockedByRegion && this.order?.status !== 'cancelled';
+  }
+
+  verifyActual(logIndex: number) {
+    if (!this.order || this.verifyingIndex !== null) return;
+    this.verifyingIndex = logIndex;
+    this.workOrderService.verifyActual(this.order._id, logIndex).subscribe({
+      next: (res) => {
+        this.order = res;
+        this.verifyingIndex = null;
+        this.toastr.success(this.i18n.t['toastActualVerified']);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.verifyingIndex = null;
+        this.toastr.error(this.i18n.errorMessage(err));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  openRejectForm(logIndex: number) {
+    // ตั้งเวลาเริ่มต้นตามงานเดิมไว้ก่อน หัวหน้าแก้ได้
+    this.rejectForm.reset({
+      plannedDate: '', description: '',
+      plannedStartTime: this.order?.plannedStartTime || '', plannedEndTime: this.order?.plannedEndTime || ''
+    });
+    this.rejectLogIndex = logIndex;
+  }
+
+  closeRejectForm() {
+    this.rejectLogIndex = null;
+  }
+
+  submitReject() {
+    if (this.rejectForm.invalid || !this.rejectForm.value.description?.trim()) {
+      this.toastr.warning(this.i18n.lang === 'th' ? 'กรุณากรอกข้อมูลให้ครบถ้วน' : 'Please fill in all required fields');
+      this.rejectForm.markAllAsTouched();
+      return;
+    }
+    if (!this.order || this.rejectLogIndex === null) return;
+
+    this.busy = 'reject';
+    this.workOrderService.rejectActual(this.order._id, this.rejectLogIndex, this.rejectForm.value).subscribe({
+      next: (res) => {
+        this.order = res.order;
+        this.busy = null;
+        this.rejectLogIndex = null;
+        this.toastr.success(`${this.i18n.t['toastFollowUpCreated']} ${res.followUp.srNumber}`);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.busy = null;
+        this.toastr.error(this.i18n.errorMessage(err));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  goToOrder(id?: string | null) {
+    if (id) this.router.navigate(['/work-orders', id]);
   }
 
   confirmApprove() {

@@ -9,6 +9,7 @@ const STORAGE_KEY = 'ui.theme';
 export class ThemeService {
   private modeSubject = new BehaviorSubject<ThemeMode>(this.loadInitial());
   public mode$ = this.modeSubject.asObservable();
+  private switchTimer?: ReturnType<typeof setTimeout>;
 
   constructor() {
     this.apply(this.modeSubject.value);
@@ -23,10 +24,6 @@ export class ThemeService {
     return this.modeSubject.value;
   }
 
-  get glyph(): string {
-    return this.mode === 'dark' ? '☀' : '☾';
-  }
-
   toggle(): void {
     this.set(this.mode === 'light' ? 'dark' : 'light');
   }
@@ -34,6 +31,11 @@ export class ThemeService {
   set(mode: ThemeMode): void {
     this.modeSubject.next(mode);
     localStorage.setItem(STORAGE_KEY, mode);
+    // ใส่ class ชั่วคราวให้สีทั้งหน้าค่อย ๆ เปลี่ยน แล้วเอาออกจะได้ไม่ทำให้หน้าอื่นช้า
+    const root = document.documentElement;
+    root.classList.add('theme-switching');
+    clearTimeout(this.switchTimer);
+    this.switchTimer = setTimeout(() => root.classList.remove('theme-switching'), 360);
     this.apply(mode);
   }
 

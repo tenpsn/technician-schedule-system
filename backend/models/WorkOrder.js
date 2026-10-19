@@ -75,6 +75,10 @@ const WorkOrder = sequelize.define('WorkOrder', {
     defaultValue: []
   },
 
+  // งานที่สร้างต่อจากการตรวจรับไม่ผ่าน จะชี้กลับไปที่งานต้นทาง เก็บเลข SR ไว้ด้วยเพื่อแสดงลิงก์ได้ทันที
+  parentWorkOrderId: DataTypes.UUID,
+  parentSrNumber: DataTypes.STRING,
+
   // สถานะขั้นตอนงาน
   status: {
     type: DataTypes.ENUM('draft', 'pending_approval', 'approved', 'in_progress',

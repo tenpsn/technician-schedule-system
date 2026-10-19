@@ -21,7 +21,7 @@ export interface SelectOption {
           <img *ngIf="selectedImage" class="sel-img" [src]="selectedImage" alt="">
           {{ selectedLabel || placeholder }}
         </span>
-        <span class="sel-arrow">▾</span>
+        <span class="sel-arrow"><app-icon name="chevron-down" [size]="12"></app-icon></span>
       </button>
 
       <div class="sel-panel" *ngIf="open" [style.top.px]="panelTop" [style.bottom.px]="panelBottom" [style.left.px]="panelLeft" [style.min-width.px]="panelMinWidth">

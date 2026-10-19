@@ -26,7 +26,7 @@ import { getProvinceOptions, getRegionLabel } from '../../constants/provinces';
               <button type="button" class="avatar" (click)="avatarInput.click()" [disabled]="saving" [title]="i18n.t['changeAvatar']">
                 <img *ngIf="avatarPreview; else avatarInitials" [src]="avatarPreview" alt="">
                 <ng-template #avatarInitials>{{ initials }}</ng-template>
-                <span class="avatar-overlay">📷</span>
+                <span class="avatar-overlay"><app-icon name="camera" [size]="22"></app-icon></span>
               </button>
               <input #avatarInput type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="onAvatarSelected($event)">
               <div class="identity-info">

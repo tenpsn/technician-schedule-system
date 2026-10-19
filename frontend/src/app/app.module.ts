@@ -24,6 +24,7 @@ import { ProfileComponent } from './components/profile/profile.component';
 import { DatePickerComponent } from './components/date-picker/date-picker.component';
 import { TimePickerComponent } from './components/time-picker/time-picker.component';
 import { SelectComponent } from './components/select/select.component';
+import { IconComponent } from './components/icon/icon.component';
 import { LocalDatePipe } from './pipes/local-date.pipe';
 
 @NgModule({
@@ -43,6 +44,7 @@ import { LocalDatePipe } from './pipes/local-date.pipe';
     DatePickerComponent,
     TimePickerComponent,
     SelectComponent,
+    IconComponent,
     LocalDatePipe
   ],
   imports: [

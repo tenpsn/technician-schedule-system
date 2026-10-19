@@ -39,7 +39,7 @@ interface TypeBreakdown {
 
         <div class="search-bar" *ngIf="!loading && technicians.length">
           <div class="search-box">
-            <span>⌕</span>
+            <span><app-icon name="search" [size]="15"></app-icon></span>
             <input type="text" [(ngModel)]="searchText" [placeholder]="i18n.t['searchList']" (ngModelChange)="applyFilter()">
           </div>
           <span class="mono count">{{ i18n.t['allOf'] }} {{ filteredTechnicians.length }} / {{ technicians.length }}</span>
@@ -210,7 +210,7 @@ interface TypeBreakdown {
                 <td class="mono">
                   {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}
                   <div class="resched-note" *ngIf="firstRescheduleDate(o) as fromDate" [title]="i18n.t['rescheduleHistory']">
-                    <div>↺ {{ fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}</div>
+                    <div>{{ fromDate | localDate:'dd/MM/yyyy':'UTC' }} → {{ o.plannedDate | localDate:'dd/MM/yyyy':'UTC' }}</div>
                     <div *ngIf="rescheduleCountOf(o) > 1">{{ i18n.t['rescheduledCountLabel'] }} {{ rescheduleCountOf(o) }} {{ i18n.t['timesWord'] }}</div>
                   </div>
                 </td>

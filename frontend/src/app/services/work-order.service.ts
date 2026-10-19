@@ -24,6 +24,12 @@ export interface ActualLogEntry {
   recordedAt: string;
   recordedById?: string | null;
   recordedByName?: string | null;
+  verifiedById?: string | null;
+  verifiedByName?: string | null;
+  verifiedAt?: string | null;
+  verifyResult?: 'passed' | 'rejected' | null;
+  followUpWorkOrderId?: string | null;
+  followUpSrNumber?: string | null;
 }
 
 export interface RescheduleHistoryEntry {
@@ -38,6 +44,8 @@ export interface RescheduleHistoryEntry {
 export interface WorkOrder {
   _id: string;
   srNumber: string;
+  parentWorkOrderId?: string | null;
+  parentSrNumber?: string | null;
   technician: any;
   // รูปโปรไฟล์ของคนในประวัติอนุมัติ เลื่อน และบันทึกผล คีย์เป็น id ผู้ใช้
   people?: Record<string, { fullName: string; avatarUrl?: string | null }>;
@@ -140,6 +148,17 @@ export class WorkOrderService {
   updateActual(id: string, data: any): Observable<WorkOrder> {
     return this.http.patch<WorkOrder>(`${environment.apiUrl}/work-orders/${id}/actual`, 
       data, { headers: this.getHeaders() });
+  }
+
+  verifyActual(id: string, logIndex: number): Observable<WorkOrder> {
+    return this.http.patch<WorkOrder>(`${environment.apiUrl}/work-orders/${id}/actual/${logIndex}/verify`,
+      {}, { headers: this.getHeaders() });
+  }
+
+  rejectActual(id: string, logIndex: number, data: { plannedDate: string; plannedStartTime?: string; plannedEndTime?: string; description: string }):
+    Observable<{ order: WorkOrder; followUp: { _id: string; srNumber: string } }> {
+    return this.http.patch<{ order: WorkOrder; followUp: { _id: string; srNumber: string } }>(
+      `${environment.apiUrl}/work-orders/${id}/actual/${logIndex}/reject`, data, { headers: this.getHeaders() });
   }
 
   uploadPhotos(id: string, files: File[]): Observable<WorkOrder> {
