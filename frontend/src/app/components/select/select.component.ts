@@ -25,14 +25,16 @@ export interface SelectOption {
       </button>
 
       <div class="sel-panel" *ngIf="open" [style.top.px]="panelTop" [style.bottom.px]="panelBottom" [style.left.px]="panelLeft" [style.min-width.px]="panelMinWidth">
-        <button type="button" *ngFor="let opt of options"
+        <input *ngIf="searchable" class="sel-search" type="text" [(ngModel)]="query" [placeholder]="searchPlaceholder"
+               (click)="$event.stopPropagation()" (keydown.enter)="pickFirstMatch($event)">
+        <button type="button" *ngFor="let opt of visibleOptions"
                 class="sel-opt"
                 [class.selected]="isSelected(opt)"
                 (click)="pick(opt); $event.stopPropagation()">
           <img *ngIf="opt.image" class="sel-img" [src]="opt.image" alt="">
           {{ opt.label }}
         </button>
-        <div *ngIf="options.length === 0" class="sel-empty">–</div>
+        <div *ngIf="visibleOptions.length === 0" class="sel-empty">–</div>
       </div>
     </div>
   `,
@@ -64,6 +66,11 @@ export interface SelectOption {
     .sel-opt.selected { background: var(--accent); color: #fff; font-weight: 600; }
     .sel-img { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; vertical-align: middle; margin-right: 8px; }
     .sel-field.compact .sel-img { width: 18px; height: 18px; margin-right: 6px; }
+    .sel-search {
+      position: sticky; top: -6px; z-index: 1; display: block; width: 100%; height: 38px; margin: -6px 0 6px;
+      padding: 0 10px; border: none; border-bottom: 1px solid var(--line2); border-radius: 14px 14px 0 0;
+      background: var(--surface); color: var(--ink); font-size: 13.5px; outline: none;
+    }
     .sel-empty { padding: 10px; font-size: 12.5px; color: var(--sub); text-align: center; }
   `]
 })
@@ -71,6 +78,11 @@ export class SelectComponent implements ControlValueAccessor, OnDestroy {
   @Input() options: SelectOption[] = [];
   @Input() placeholder = '';
   @Input() compact = false;
+  // รายการยาว เช่น จังหวัดหรือตำบล เปิดช่องพิมพ์ค้นหาไว้บนสุดของรายการ
+  @Input() searchable = false;
+  @Input() searchPlaceholder = '';
+
+  query = '';
 
   open = false;
   disabled = false;
@@ -115,6 +127,18 @@ export class SelectComponent implements ControlValueAccessor, OnDestroy {
     return this.options.find(o => o.value === this.value)?.image || null;
   }
 
+  get visibleOptions(): SelectOption[] {
+    const q = this.query.trim().toLowerCase();
+    return q ? this.options.filter(o => o.label.toLowerCase().includes(q)) : this.options;
+  }
+
+  // กด Enter ในช่องค้นหาแล้วเลือกตัวแรกที่ตรงให้เลย
+  pickFirstMatch(event: Event) {
+    event.preventDefault();
+    const first = this.visibleOptions[0];
+    if (first) this.pick(first);
+  }
+
   isSelected(opt: SelectOption): boolean {
     return opt.value === this.value;
   }
@@ -122,7 +146,11 @@ export class SelectComponent implements ControlValueAccessor, OnDestroy {
   toggle() {
     if (this.disabled) return;
     this.open = !this.open;
-    if (this.open) this.positionPanel();
+    if (this.open) {
+      this.query = '';
+      this.positionPanel();
+      if (this.searchable) setTimeout(() => this.elementRef.nativeElement.querySelector('.sel-search')?.focus());
+    }
   }
 
   // panel เป็น position fixed หลุดออกจาก modal ที่เลื่อนได้ ไม่ถูกตัดหรือต้องเลื่อนลงไปหา เหมือน date picker

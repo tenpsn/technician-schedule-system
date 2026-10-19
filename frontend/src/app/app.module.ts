@@ -25,6 +25,7 @@ import { DatePickerComponent } from './components/date-picker/date-picker.compon
 import { TimePickerComponent } from './components/time-picker/time-picker.component';
 import { SelectComponent } from './components/select/select.component';
 import { IconComponent } from './components/icon/icon.component';
+import { AddressFieldsComponent } from './components/address-fields/address-fields.component';
 import { LocalDatePipe } from './pipes/local-date.pipe';
 
 @NgModule({
@@ -45,6 +46,7 @@ import { LocalDatePipe } from './pipes/local-date.pipe';
     TimePickerComponent,
     SelectComponent,
     IconComponent,
+    AddressFieldsComponent,
     LocalDatePipe
   ],
   imports: [

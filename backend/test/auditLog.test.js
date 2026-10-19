@@ -41,20 +41,22 @@ describe('Audit log for hospitals and contracts', () => {
 
   test('records who added, edited and deleted a hospital with only the changed fields', async () => {
     const auth = { Authorization: `Bearer ${supToken}` };
-    const created = await request(app).post('/api/hospitals').set(auth).send({ name: 'รพ.ก', address: 'ที่อยู่เดิม' });
+    const created = await request(app).post('/api/hospitals').set(auth).send({ name: 'รพ.ก', addressLine: 'ที่อยู่เดิม', province: 'ตรัง', district: 'กันตัง', subdistrict: 'กันตัง' });
     hospitalId = created.body._id;
 
     // บันทึกซ้ำโดยไม่เปลี่ยนอะไร ต้องไม่เกิดประวัติ
-    await request(app).patch(`/api/hospitals/${hospitalId}`).set(auth).send({ name: 'รพ.ก', address: 'ที่อยู่เดิม' });
-    await request(app).patch(`/api/hospitals/${hospitalId}`).set(auth).send({ name: 'รพ.ก', address: 'ที่อยู่ใหม่' });
+    await request(app).patch(`/api/hospitals/${hospitalId}`).set(auth).send({ name: 'รพ.ก', addressLine: 'ที่อยู่เดิม', province: 'ตรัง', district: 'กันตัง', subdistrict: 'กันตัง' });
+    await request(app).patch(`/api/hospitals/${hospitalId}`).set(auth).send({ name: 'รพ.ก', addressLine: 'ที่อยู่ใหม่', province: 'ตรัง', district: 'กันตัง', subdistrict: 'กันตัง' });
 
-    const temp = await request(app).post('/api/hospitals').set(auth).send({ name: 'รพ.ลบ', address: 'x' });
+    const temp = await request(app).post('/api/hospitals').set(auth).send({ name: 'รพ.ลบ', province: 'ตรัง', district: 'กันตัง', subdistrict: 'กันตัง' });
     await request(app).delete(`/api/hospitals/${temp.body._id}`).set(auth);
 
     const { items, total } = await history('?entityType=hospital');
     expect(total).toBe(4);
     expect(items.map((i) => i.action)).toEqual(['delete', 'create', 'update', 'create']);
-    expect(items[2].changes).toEqual([{ field: 'address', from: 'ที่อยู่เดิม', to: 'ที่อยู่ใหม่' }]);
+    expect(items[2].changes).toEqual([{
+      field: 'address', from: 'ที่อยู่เดิม ตำบลกันตัง อำเภอกันตัง จังหวัดตรัง 92110', to: 'ที่อยู่ใหม่ ตำบลกันตัง อำเภอกันตัง จังหวัดตรัง 92110'
+    }]);
     expect(items[0]).toMatchObject({ entityLabel: 'รพ.ลบ', actorName: 'Audit Sup' });
   });
 

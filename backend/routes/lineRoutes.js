@@ -11,7 +11,7 @@ const { isAddJobMessage, parseAddJobMessage, parseThaiDate, parseTimeRange } = r
 const lineSession = require('../utils/lineSession');
 const loginAttempts = require('../utils/loginAttempts');
 const { formatThaiDate } = require('../utils/dateFormat');
-const { isSupervisorRole, isBlockedByRegion } = require('../config/roles');
+const { isSupervisorRole, isBlockedByRegion, isRegionRestricted, RESTRICTED_SUPERVISOR_REGION } = require('../config/roles');
 const { WORK_TYPES, OTHER_TYPE, isRepairType, isInstallationType } = require('../config/workTypes');
 const logger = require('../config/logger');
 
@@ -259,14 +259,16 @@ const handleLoginStep = async (text, lineUserId, replyToken, session) => {
 // ต้อง escape ตัวอักษร % และ _ ก่อนเพราะ ILIKE ตีความเป็น wildcard ถึงแม้ Sequelize จะกัน SQL injection แล้วก็ตาม
 const escapeLikePattern = (str) => str.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-const findHospitalMatch = async (customerName) => {
+// หัวหน้าภาคใต้เทียบได้แค่โรงพยาบาลภาคใต้ แบบเดียวกับหน้าเว็บ
+const findHospitalMatch = async (customerName, user) => {
   const cleaned = escapeLikePattern(customerName.replace(/^รพ\.?\s*/, '').trim());
+  const regionWhere = isRegionRestricted(user) ? { region: RESTRICTED_SUPERVISOR_REGION } : {};
 
-  const exact = await Hospital.findOne({ where: { name: { [Op.iLike]: cleaned } } });
+  const exact = await Hospital.findOne({ where: { name: { [Op.iLike]: cleaned }, ...regionWhere } });
   if (exact) return exact;
 
   const partial = await Hospital.findAll({
-    where: { name: { [Op.iLike]: `%${cleaned}%` } },
+    where: { name: { [Op.iLike]: `%${cleaned}%` }, ...regionWhere },
     limit: 2
   });
   return partial.length === 1 ? partial[0] : null;
@@ -314,7 +316,7 @@ const handleAddJob = async (text, technician, replyToken) => {
   }
 
   if (!result.data.customerLocation) {
-    const hospital = await findHospitalMatch(result.data.customerName);
+    const hospital = await findHospitalMatch(result.data.customerName, technician);
     if (!hospital) {
       return replyText(replyToken,
         `ไม่พบ "${result.data.customerName}" ในฐานข้อมูลโรงพยาบาล กรุณาระบุ "สถานที่:" เพิ่มด้วย`);
@@ -344,7 +346,7 @@ const handleAddJobStep = async (text, technician, lineUserId, replyToken, sessio
 
   if (step === 'customerName') {
     data.customerName = value;
-    const hospital = await findHospitalMatch(value);
+    const hospital = await findHospitalMatch(value, technician);
     if (hospital) {
       data.customerLocation = hospital.address;
       lineSession.set(lineUserId, { flow: 'addJob', step: 'workType', data });

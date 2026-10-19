@@ -7,6 +7,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 const { connectDB } = require('./config/database');
+const Hospital = require('./models/Hospital');
 const logger = require('./config/logger');
 
 // นำเข้า routes ต่างๆ
@@ -25,8 +26,17 @@ require('./cron/overdueCheck');
 // โหลดตัวแปรสภาพแวดล้อม
 dotenv.config();
 
-// เชื่อมต่อฐานข้อมูล
-connectDB();
+// เชื่อมต่อฐานข้อมูล แล้วแยกที่อยู่ให้โรงพยาบาลที่ยังไม่เคยแยก
+// ตอนเทสไม่ต้องทำ เพราะชุดทดสอบสร้างตารางใหม่เองทุกครั้ง
+connectDB().then(async () => {
+  if (process.env.NODE_ENV === 'test') return;
+  try {
+    const { checked, filled } = await Hospital.backfillAddresses();
+    if (checked > 0) logger.info(`Hospital addresses backfilled: ${filled}/${checked} with subdistrict`);
+  } catch (error) {
+    logger.error(`Hospital address backfill error: ${error.message}`);
+  }
+});
 
 const app = express();
 

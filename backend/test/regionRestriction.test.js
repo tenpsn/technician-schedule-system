@@ -150,7 +150,8 @@ describe('Southern supervisor region restriction', () => {
   });
 
   test('southern supervisor can assign MA visits only to southern technicians', async () => {
-    const hospital = await Hospital.create({ name: 'รพ.สัญญา', address: 'ทดสอบ' });
+    // สัญญาต้องเป็นของโรงพยาบาลภาคใต้ หัวหน้าภาคใต้ถึงจะมอบหมายได้
+    const hospital = await Hospital.create({ name: 'รพ.สัญญา', address: 'อ.เมือง จ.สงขลา', province: 'สงขลา' });
     const contract = await Contract.create({
       hospitalId: hospital.id, contractNumber: 'C-REGION', startDate: '2026-01-01', endDate: '2026-12-31', maIntervalMonths: 6
     });

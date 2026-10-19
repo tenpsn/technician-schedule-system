@@ -124,7 +124,7 @@ describe('รูปโปรไฟล์ในประวัติ', () => {
   });
 
   test('ประวัติโรงพยาบาลไม่มีรูปผู้ใช้ที่ถูกแก้', async () => {
-    await request(app).post('/api/hospitals').set('Authorization', `Bearer ${adminToken}`).send({ name: 'รพ.ทดสอบรูป', address: 'ที่อยู่' });
+    await request(app).post('/api/hospitals').set('Authorization', `Bearer ${adminToken}`).send({ name: 'รพ.ทดสอบรูป', province: 'ตรัง', district: 'กันตัง', subdistrict: 'กันตัง' });
     const res = await request(app).get('/api/audit-logs?entityType=hospital').set('Authorization', `Bearer ${adminToken}`);
     expect(res.body.items[0].subjectUser).toBeNull();
     expect(res.body.items[0].actor.avatarUrl).toBe('/uploads/avatars/admin.jpg');

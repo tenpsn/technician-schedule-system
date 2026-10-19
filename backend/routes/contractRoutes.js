@@ -25,6 +25,27 @@ const VISIT_INCLUDE = [
 
 const router = express.Router();
 
+const REGION_FORBIDDEN = {
+  code: 'not_authorized_region', message: 'Southern-region supervisors can only manage jobs of southern-region technicians'
+};
+
+// หัวหน้าภาคใต้จัดการได้แค่โรงพยาบาลภาคใต้ โรงพยาบาลที่ยังไม่มีจังหวัดก็ถือว่าไม่ใช่ภาคใต้
+const isHospitalBlocked = (user, hospital) => isRegionRestricted(user) && hospital?.region !== RESTRICTED_SUPERVISOR_REGION;
+
+// โหลดสัญญาพร้อมโรงพยาบาลแล้วเช็คสิทธิ์ภาค ส่ง response กลับเองถ้าไม่ผ่าน
+const loadContractForUser = async (req, res) => {
+  const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
+  if (!contract) {
+    res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
+    return null;
+  }
+  if (isHospitalBlocked(req.user, contract.hospital)) {
+    res.status(403).json(REGION_FORBIDDEN);
+    return null;
+  }
+  return contract;
+};
+
 function validateBody(body) {
   const { hospitalId, contractNumber, startDate, endDate, maIntervalMonths } = body;
   if (!hospitalId || !contractNumber || !startDate || !endDate || !maIntervalMonths) {
@@ -144,9 +165,13 @@ router.get('/', protect, async (req, res) => {
     const { hospitalId } = req.query;
     const where = hospitalId ? { hospitalId } : {};
 
+    // หัวหน้าภาคใต้ใส่เงื่อนไขที่ include ทำให้ได้แค่สัญญาของโรงพยาบาลภาคใต้ตั้งแต่ query
+    const hospitalInclude = isRegionRestricted(req.user)
+      ? { model: Hospital, as: 'hospital', where: { region: RESTRICTED_SUPERVISOR_REGION } }
+      : { model: Hospital, as: 'hospital' };
     const contracts = await Contract.findAll({
       where,
-      include: [{ model: Hospital, as: 'hospital' }],
+      include: [hospitalInclude],
       order: [['createdAt', 'DESC']]
     });
 
@@ -167,6 +192,9 @@ router.get('/', protect, async (req, res) => {
 // เพื่อให้สัญญาที่สร้างก่อนมีฟีเจอร์นี้ก็ยังมีตารางใช้งานได้
 router.get('/:id/visits', protect, async (req, res) => {
   try {
+    const contract = await loadContractForUser(req, res);
+    if (!contract) return;
+
     let visits = await MaVisit.findAll({
       where: { contractId: req.params.id },
       include: VISIT_INCLUDE,
@@ -174,10 +202,6 @@ router.get('/:id/visits', protect, async (req, res) => {
     });
 
     if (visits.length === 0) {
-      const contract = await Contract.findByPk(req.params.id);
-      if (!contract) {
-        return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
-      }
       await regenerateVisits(contract.id, contract.startDate, contract.endDate, contract.maIntervalMonths);
       visits = await MaVisit.findAll({
         where: { contractId: req.params.id },
@@ -200,6 +224,8 @@ router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), 
     if (!scheduledDate) {
       return res.status(400).json({ code: 'visit_date_required', message: 'Please provide a date' });
     }
+    const contract = await loadContractForUser(req, res);
+    if (!contract) return;
 
     const visit = await MaVisit.findOne({ where: { id: req.params.visitId, contractId: req.params.id } });
     if (!visit) {
@@ -214,7 +240,6 @@ router.patch('/:id/visits/:visitId', protect, authorize('supervisor', 'admin'), 
     await visit.save();
     logger.info(`MA visit rescheduled: contract ${req.params.id}, visit #${visit.sequenceNo} -> ${scheduledDate}`);
     if (fromDate !== scheduledDate) {
-      const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
       await recordAudit({
         entityType: 'contract', entityId: req.params.id, entityLabel: auditLabel(contract, contract.hospital?.name || '-'), action: 'update',
         changes: [{ field: 'maVisitDate', seq: visit.sequenceNo, from: fromDate, to: scheduledDate }], user: req.user
@@ -234,6 +259,8 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
     if (!technicianId) {
       return res.status(400).json({ code: 'technician_required', message: 'Please select a technician' });
     }
+    const contract = await loadContractForUser(req, res);
+    if (!contract) return;
 
     const visit = await MaVisit.findOne({ where: { id: req.params.visitId, contractId: req.params.id } });
     if (!visit) {
@@ -248,12 +275,7 @@ router.post('/:id/visits/:visitId/assign', protect, authorize('supervisor', 'adm
       return res.status(404).json({ code: 'user_not_found', message: 'User not found' });
     }
     if (isRegionRestricted(req.user) && technician.region !== RESTRICTED_SUPERVISOR_REGION) {
-      return res.status(403).json({ code: 'not_authorized_region', message: 'Southern-region supervisors can only manage jobs of southern-region technicians' });
-    }
-
-    const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
-    if (!contract) {
-      return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
+      return res.status(403).json(REGION_FORBIDDEN);
     }
 
     const workOrder = await createWorkOrder({
@@ -297,6 +319,7 @@ router.post('/', protect, authorize('supervisor', 'admin'), async (req, res) => 
     if (!hospital) {
       return res.status(404).json({ code: 'hospital_not_found', message: 'Hospital not found' });
     }
+    if (isHospitalBlocked(req.user, hospital)) return res.status(403).json(REGION_FORBIDDEN);
 
     const interval = parseInt(maIntervalMonths);
     const contract = await Contract.create({
@@ -332,16 +355,16 @@ router.patch('/:id', protect, authorize('supervisor', 'admin'), async (req, res)
       return res.status(400).json(validationError);
     }
 
-    const contract = await Contract.findByPk(req.params.id, { include: [{ model: Hospital, as: 'hospital' }] });
-    if (!contract) {
-      return res.status(404).json({ code: 'contract_not_found', message: 'Contract not found' });
-    }
+    const contract = await loadContractForUser(req, res);
+    if (!contract) return;
     const before = auditSnapshot(contract, contract.hospital?.name || null);
 
     const hospital = await Hospital.findByPk(hospitalId);
     if (!hospital) {
       return res.status(404).json({ code: 'hospital_not_found', message: 'Hospital not found' });
     }
+    // ย้ายสัญญาไปโรงพยาบาลภาคอื่นก็ไม่ได้
+    if (isHospitalBlocked(req.user, hospital)) return res.status(403).json(REGION_FORBIDDEN);
 
     const interval = parseInt(maIntervalMonths);
     const scheduleChanged = contract.startDate !== startDate || contract.endDate !== endDate

@@ -526,7 +526,12 @@ export class ContractSettingsComponent implements OnInit {
   loadHospitals() {
     this.hospitalService.getAll().subscribe({
       next: (hospitals: Hospital[]) => {
-        this.hospitalOptions = hospitals.map(h => ({ value: h._id, label: h.name }));
+        // หัวหน้าภาคใต้ทำสัญญาได้แค่โรงพยาบาลภาคใต้ ต้องตรงกับ isHospitalBlocked ใน contractRoutes.js
+        const user = this.auth.currentUser;
+        const isSouthOnly = user?.role === 'supervisor' && user?.region === 'ใต้';
+        this.hospitalOptions = hospitals
+          .filter(h => !isSouthOnly || h.region === 'ใต้')
+          .map(h => ({ value: h._id, label: h.name }));
         this.cdr.detectChanges();
       },
       error: (err) => console.error(err)

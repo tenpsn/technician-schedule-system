@@ -9,6 +9,23 @@ export interface Hospital {
   name: string;
   address: string;
   facilityCode?: string | null;
+  addressLine?: string | null;
+  subdistrict?: string | null;
+  district?: string | null;
+  province?: string | null;
+  postalCode?: string | null;
+  region?: string | null;
+}
+
+// ค่าที่ส่งตอนเพิ่มหรือแก้โรงพยาบาล ที่อยู่เต็ม server จะรวมให้เอง
+export interface HospitalInput {
+  name: string;
+  addressLine: string;
+  province: string;
+  district: string;
+  subdistrict: string;
+  postalCode: string;
+  facilityCode?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -35,14 +52,12 @@ export class HospitalService {
     });
   }
 
-  create(name: string, address: string, facilityCode?: string): Observable<Hospital> {
-    return this.http.post<Hospital>(`${environment.apiUrl}/hospitals`,
-      { name, address, facilityCode }, { headers: this.getHeaders() });
+  create(input: HospitalInput): Observable<Hospital> {
+    return this.http.post<Hospital>(`${environment.apiUrl}/hospitals`, input, { headers: this.getHeaders() });
   }
 
-  update(id: string, name: string, address: string, facilityCode?: string): Observable<Hospital> {
-    return this.http.patch<Hospital>(`${environment.apiUrl}/hospitals/${id}`,
-      { name, address, facilityCode }, { headers: this.getHeaders() });
+  update(id: string, input: HospitalInput): Observable<Hospital> {
+    return this.http.patch<Hospital>(`${environment.apiUrl}/hospitals/${id}`, input, { headers: this.getHeaders() });
   }
 
   delete(id: string): Observable<any> {

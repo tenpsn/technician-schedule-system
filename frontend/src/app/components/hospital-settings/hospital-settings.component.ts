@@ -1,8 +1,10 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
-import { HospitalService, Hospital } from '../../services/hospital.service';
+import { HospitalService, Hospital, HospitalInput } from '../../services/hospital.service';
 import { I18nService } from '../../services/i18n.service';
+import { AuthService } from '../../services/auth.service';
+import { getProvinceLabel } from '../../constants/provinces';
 
 @Component({
   selector: 'app-hospital-settings',
@@ -21,13 +23,10 @@ import { I18nService } from '../../services/i18n.service';
             <input formControlName="name" type="text" [placeholder]="i18n.t['hospitalNamePh']">
           </label>
           <label class="field">
-            <span>{{ i18n.t['hospitalAddress'] }} *</span>
-            <input formControlName="address" type="text" [placeholder]="i18n.t['hospitalAddressPh']">
-          </label>
-          <label class="field">
             <span>{{ i18n.t['hospitalFacilityCode'] }}</span>
             <input formControlName="facilityCode" type="text" [placeholder]="i18n.t['hospitalFacilityCodePh']">
           </label>
+          <app-address-fields class="address-row" [group]="form" [onlyRegion]="onlyRegion"></app-address-fields>
           <button type="submit" [disabled]="form.invalid || saving" class="btn-primary">
             + {{ saving ? i18n.t['saving'] : i18n.t['addHospital'] }}
           </button>
@@ -50,6 +49,7 @@ import { I18nService } from '../../services/i18n.service';
                 <th>{{ i18n.t['hospitalName'] }}</th>
                 <th>{{ i18n.t['hospitalAddress'] }}</th>
                 <th class="col-code">{{ i18n.t['hospitalFacilityCode'] }}</th>
+                <th class="col-province">{{ i18n.t['province'] }}</th>
                 <th class="col-actions"></th>
               </tr>
             </thead>
@@ -58,13 +58,14 @@ import { I18nService } from '../../services/i18n.service';
                 <td>{{ h.name }}</td>
                 <td class="muted">{{ h.address }}</td>
                 <td class="muted">{{ h.facilityCode || '-' }}</td>
+                <td [class.muted]="!h.province">{{ provinceLabel(h.province) || '-' }}</td>
                 <td class="actions-cell">
                   <button (click)="openEdit(h)" class="btn-edit">{{ i18n.t['edit'] }}</button>
                   <button (click)="confirmDelete(h)" class="btn-delete">{{ i18n.t['delete'] }}</button>
                 </td>
               </tr>
               <tr *ngIf="filteredHospitals.length === 0">
-                <td colspan="4" class="empty-cell">{{ i18n.t['noResults'] }}</td>
+                <td colspan="5" class="empty-cell">{{ i18n.t['noResults'] }}</td>
               </tr>
             </tbody>
           </table>
@@ -102,13 +103,10 @@ import { I18nService } from '../../services/i18n.service';
               <input formControlName="name" type="text" [placeholder]="i18n.t['hospitalNamePh']">
             </label>
             <label class="field modal-field">
-              <span>{{ i18n.t['hospitalAddress'] }} *</span>
-              <input formControlName="address" type="text" [placeholder]="i18n.t['hospitalAddressPh']">
-            </label>
-            <label class="field modal-field">
               <span>{{ i18n.t['hospitalFacilityCode'] }}</span>
               <input formControlName="facilityCode" type="text" [placeholder]="i18n.t['hospitalFacilityCodePh']">
             </label>
+            <app-address-fields class="modal-field" [group]="editForm" [onlyRegion]="onlyRegion"></app-address-fields>
             <div class="modal-actions">
               <button type="submit" [disabled]="editForm.invalid || editSaving" class="btn-primary">
                 {{ editSaving ? i18n.t['saving'] : i18n.t['save'] }}
@@ -152,6 +150,9 @@ import { I18nService } from '../../services/i18n.service';
     .muted { color: var(--sub); }
     .actions-cell { text-align: right; padding-right: 20px; white-space: nowrap; }
     .col-code { width: 140px; }
+    .col-province { width: 140px; }
+    .address-row { flex: 1 1 100%; }
+    app-address-fields.modal-field { display: block; }
     .col-actions { width: 170px; }
     .empty-cell { text-align: center; color: var(--sub); padding: 30px; }
     .btn-delete { border-radius: var(--radius); height: 34px; padding: 0 12px; border: 1px solid var(--danger-line); background: var(--danger-bg); color: var(--danger-text); font-size: 12.5px; font-weight: 600; cursor: pointer; }
@@ -171,7 +172,7 @@ import { I18nService } from '../../services/i18n.service';
     .page-input[type=number] { -moz-appearance: textfield; }
 
     .modal-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, 0.62); display: flex; align-items: center; justify-content: center; padding: 18px; animation: veilIn .16s ease both; }
-    .modal-card { border-radius: 16px; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease backwards; }
+    .modal-card { border-radius: 16px; width: 100%; max-width: 620px; max-height: 92vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); padding: 24px; animation: modalIn .2s ease backwards; }
     .modal-title { font-size: 18px; font-weight: 700; }
     .modal-body { margin-top: 10px; font-size: 14px; color: var(--ink); }
     .modal-field { margin-top: 16px; }
@@ -203,19 +204,35 @@ export class HospitalSettingsComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private hospitalService: HospitalService,
+    private auth: AuthService,
     public i18n: I18nService,
     private toastr: ToastrService,
     private cdr: ChangeDetectorRef
   ) {
-    this.form = this.fb.group({
+    this.form = this.buildForm();
+    this.editForm = this.buildForm();
+  }
+
+  provinceLabel(province?: string | null): string {
+    return getProvinceLabel(province, this.i18n.lang);
+  }
+
+  // หัวหน้าภาคใต้เพิ่มหรือย้ายโรงพยาบาลได้แค่จังหวัดภาคใต้ ต้องตรงกับ isRegionBlocked ใน hospitalRoutes.js
+  get onlyRegion(): string | null {
+    const user = this.auth.currentUser;
+    return user?.role === 'supervisor' && user?.region === 'ใต้' ? 'ใต้' : null;
+  }
+
+  // ต้องเลือกจังหวัด อำเภอ ตำบล ครบ ส่วนบ้านเลขที่ไม่บังคับ เพราะบางแห่งรู้แค่ตำบล
+  private buildForm(): FormGroup {
+    return this.fb.group({
       name: ['', Validators.required],
-      address: ['', Validators.required],
-      facilityCode: ['']
-    });
-    this.editForm = this.fb.group({
-      name: ['', Validators.required],
-      address: ['', Validators.required],
-      facilityCode: ['']
+      facilityCode: [''],
+      addressLine: [''],
+      province: ['', Validators.required],
+      district: ['', Validators.required],
+      subdistrict: ['', Validators.required],
+      postalCode: ['']
     });
   }
 
@@ -276,14 +293,12 @@ export class HospitalSettingsComponent implements OnInit {
     if (this.form.invalid) return;
 
     this.saving = true;
-    const { name, address, facilityCode } = this.form.value;
-
-    this.hospitalService.create(name, address, facilityCode).subscribe({
+    this.hospitalService.create(this.form.value as HospitalInput).subscribe({
       next: (hospital) => {
         this.hospitals = [...this.hospitals, hospital].sort((a, b) => a.name.localeCompare(b.name));
         this.applyFilter(false);
         this.toastr.success(`${this.i18n.t['toastHospital']} · ${hospital.name}`);
-        this.form.reset();
+        this.form.reset({ name: '', facilityCode: '', addressLine: '', province: '', district: '', subdistrict: '', postalCode: '' });
         this.saving = false;
         this.cdr.detectChanges();
       },
@@ -297,16 +312,23 @@ export class HospitalSettingsComponent implements OnInit {
 
   openEdit(h: Hospital) {
     this.editTarget = h;
-    this.editForm.setValue({ name: h.name, address: h.address, facilityCode: h.facilityCode || '' });
+    // โรงพยาบาลเก่าที่ยังแยกที่อยู่ไม่ได้ ใช้ที่อยู่เต็มเดิมเป็นบ้านเลขที่ไปก่อน
+    this.editForm.setValue({
+      name: h.name,
+      facilityCode: h.facilityCode || '',
+      addressLine: h.addressLine ?? h.address,
+      province: h.province || '',
+      district: h.district || '',
+      subdistrict: h.subdistrict || '',
+      postalCode: h.postalCode || ''
+    });
   }
 
   doEdit() {
     if (this.editForm.invalid || !this.editTarget) return;
     const target = this.editTarget;
-    const { name, address, facilityCode } = this.editForm.value;
-
     this.editSaving = true;
-    this.hospitalService.update(target._id, name, address, facilityCode).subscribe({
+    this.hospitalService.update(target._id, this.editForm.value as HospitalInput).subscribe({
       next: (updated) => {
         this.hospitals = this.hospitals
           .map(h => h._id === updated._id ? updated : h)
