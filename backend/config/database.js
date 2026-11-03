@@ -2,11 +2,15 @@ require('dotenv').config();
 const { Sequelize } = require('sequelize');
 const logger = require('./logger');
 
-const dbUrl = process.env.NODE_ENV === 'test'
-  ? (process.env.DATABASE_URL_TEST || process.env.DATABASE_URL)
-  : process.env.DATABASE_URL;
+// แยกค่าเชื่อมต่อเป็นทีละตัวแบบ JPS-web รหัสที่มีเครื่องหมายพิเศษจึงใส่ได้ตรงๆ
+// ตอนเทสใช้ DB_NAME_TEST ถ้าไม่ได้ตั้งไว้จะใช้ DB_NAME แทน
+const dbName = process.env.NODE_ENV === 'test'
+  ? (process.env.DB_NAME_TEST || process.env.DB_NAME)
+  : process.env.DB_NAME;
 
-const sequelize = new Sequelize(dbUrl, {
+const sequelize = new Sequelize(dbName, process.env.DB_USER, process.env.DB_PASSWORD, {
+  host: process.env.DB_HOST || 'localhost',
+  port: Number(process.env.DB_PORT) || 5432,
   dialect: 'postgres',
   logging: false,
 });
