@@ -27,9 +27,7 @@ require('./cron/overdueCheck');
 dotenv.config();
 
 // เชื่อมต่อฐานข้อมูล แล้วแยกที่อยู่ให้โรงพยาบาลที่ยังไม่เคยแยก
-// ตอนเทสไม่ต้องทำ เพราะชุดทดสอบสร้างตารางใหม่เองทุกครั้ง
 connectDB().then(async () => {
-  if (process.env.NODE_ENV === 'test') return;
   try {
     const { checked, filled } = await Hospital.backfillAddresses();
     if (checked > 0) logger.info(`Hospital addresses backfilled: ${filled}/${checked} with subdistrict`);
@@ -95,18 +93,12 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 
-// bind port เฉพาะตอนรันไฟล์นี้ตรงๆ เทสจะ require app ไปใช้กับ supertest เองโดยไม่ต้อง listen
-// ถ้า listen ซ้ำจะไปชนพอร์ตเดียวกันกับ dev server หรือ supertest ที่สร้างเซิร์ฟเวอร์ชั่วคราวของตัวเอง
-if (require.main === module) {
-  const server = app.listen(PORT, () => {
-    logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
-  });
+const server = app.listen(PORT, () => {
+  logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+});
 
-  // ดักจับ promise rejection ที่ไม่ได้ถูกจัดการ
-  process.on('unhandledRejection', (err) => {
-    logger.error(`❌ Unhandled Rejection: ${err.message}`);
-    server.close(() => process.exit(1));
-  });
-}
-
-module.exports = app;
+// ดักจับ promise rejection ที่ไม่ได้ถูกจัดการ
+process.on('unhandledRejection', (err) => {
+  logger.error(`❌ Unhandled Rejection: ${err.message}`);
+  server.close(() => process.exit(1));
+});

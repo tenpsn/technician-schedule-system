@@ -26,8 +26,6 @@ technician-schedule-system/
 │   │   └── notificationRoutes.js
 │   ├── cron/
 │   │   └── overdueCheck.js
-│   ├── test/
-│   │   └── cancelWorkOrder.test.js
 │   ├── .env
 │   ├── package.json
 │   ├── server.js
@@ -174,15 +172,6 @@ ng serve
 
 สถานะงานทั้งหมด: `draft → pending_approval → approved → in_progress → completed / overdue / cancelled / rescheduled`
 
-## 🧪 Testing
-
-```bash
-cd backend
-npm test
-```
-
-`test/cancelWorkOrder.test.js` ครอบคลุม: ยกเลิกงานในฐานะเจ้าของ, ห้ามยกเลิกถ้าไม่ระบุเหตุผล, ห้ามยกเลิกถ้าเหตุผลสั้นเกินไป, หัวหน้ายกเลิกงานของช่างคนอื่นได้, ห้ามยกเลิกงานที่เสร็จแล้ว
-
 ## ✅ สรุปฟีเจอร์
 
 | ฟีเจอร์ | สถานะ |
@@ -199,7 +188,6 @@ npm test
 | รายงานงานที่ยกเลิก | ✅ |
 | Responsive (Mobile + Desktop) | ✅ |
 | Logging ทุกการกระทำ (winston) | ✅ |
-| Testing (jest + supertest) | ✅ |
 
 ## ⚠️ สิ่งที่ควรทำต่อ (ไม่ได้รวมโค้ดไว้ในไฟล์นี้)
 
